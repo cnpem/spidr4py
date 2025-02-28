@@ -10,6 +10,7 @@ except ImportError:
 import sys
 import helpers
 import datetime
+import numpy as np
 
 # Computes temperature convertion equation based on sense and bandgap DACs
 # For more details, please take a look at https://timepix4.web.cern.ch/timepix4/timepix4/ChipDescription/analog_periphery.html?highlight=temperature#bandgap-and-temperature-sensor
@@ -20,8 +21,8 @@ if __name__ == '__main__':
 
     args={
         '--number': dict(type=int,default=1,help='Number of acquisitions'),
-        '--save-txt': dict(action=BooleanOptionalAction,default=True,help='save data as txt'),
-        '--test_name': dict(type=str,default='tpx4_read_temperature',help='test name to be appended to output filename'),
+        '--save-data': dict(action=BooleanOptionalAction,default=True,help='save data as txt'),
+        '--test_name': dict(type=str,default='tpx4_read_temperature',help='test name to be appended to output filenames. Run datetime will always precede the name'),
         '--plot': dict(action=BooleanOptionalAction,default=True,help='control plot show'),
         '--save-plot': dict(action=BooleanOptionalAction,default=False,help='control plot save as figure'),
     }
@@ -63,6 +64,10 @@ if __name__ == '__main__':
         print("---------------------------------")
         print("External ADC Temperature[°C] = ",external_temperature)
         print("---------------------------------")
+
+        #save txt with measurement data
+        if ns.save_data:
+            np.savetxt(f'{date}_{ns.test_name}.txt', np.column_stack((internal_temperature,external_temperature)), header='internal,external', delimiter=',', fmt="%.4f")
 
         plt.figure()
         plt.plot(range(ns.number),internal_temperature,'b*-',label='internal ADC')
