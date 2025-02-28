@@ -60,9 +60,15 @@ if __name__ == '__main__':
                 tpx4.AdcRead(rpc.Tpx4AdcRequest(idx=helpers.cl_chip_idx(), dac_out=DAC_BANDGAP, external=True)).value))
 
         print("---------------------------------")
-        print("Internal ADC Temperature[°C] = ",internal_temperature)
+        print(f'Read temperature - {ns.number} measurements')
         print("---------------------------------")
-        print("External ADC Temperature[°C] = ",external_temperature)
+        print("Internal ADC Temperature")
+        print(f'Mean value: {np.mean(internal_temperature):.2f} °C')
+        print(f'Standard deviation: {np.std(internal_temperature):.3e} °C')
+        print("---------------------------------")
+        print("External ADC Temperature")
+        print(f'Mean value: {np.mean(external_temperature):.2f} °C')
+        print(f'Standard deviation: {np.std(external_temperature):.3e} °C')
         print("---------------------------------")
 
         #save txt with measurement data
