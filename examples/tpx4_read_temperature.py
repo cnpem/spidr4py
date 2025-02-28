@@ -40,39 +40,23 @@ if __name__ == '__main__':
         tpx4.ConfigAdc(rpc.Tpx4AdcConfig(clock_ref=625000, nperiods=16*1024))
 
         # Resulting found values
-        internal_dac_values = []
-        external_dac_values = []
+        internal_temperature = []
+        external_temperature = []
 
-        sys.stdout.write(".")
-        sys.stdout.flush()
+        for i in range(ns.number):
 
-        # Read internal ADC
-        internal_dac_values.append(tpx4.AdcRead(
-            rpc.Tpx4AdcRequest(idx=helpers.cl_chip_idx(), dac_out=DAC_TEMP)).value)
-        
-        # Read internal ADC
-        internal_dac_values.append(tpx4.AdcRead(
-            rpc.Tpx4AdcRequest(idx=helpers.cl_chip_idx(), dac_out=DAC_BANDGAP)).value)
-        
-        TEMP_internal=dacs_to_temperature(internal_dac_values[0],internal_dac_values[1])
-        
-        # Read external ADC
-        external_dac_values.append(tpx4.AdcRead(
-            rpc.Tpx4AdcRequest(idx=helpers.cl_chip_idx(), dac_out=DAC_TEMP, external=True)).value)
-        
-        # Read external ADC
-        external_dac_values.append(tpx4.AdcRead(
-            rpc.Tpx4AdcRequest(idx=helpers.cl_chip_idx(), dac_out=DAC_BANDGAP, external=True)).value)
+            #Read TEMP=SENSE and BANDGAP using internal ADC and compute temperature
+            internal_temperature.append(dacs_to_temperature(
+                tpx4.AdcRead(rpc.Tpx4AdcRequest(idx=helpers.cl_chip_idx(), dac_out=DAC_TEMP)).value,
+                tpx4.AdcRead(rpc.Tpx4AdcRequest(idx=helpers.cl_chip_idx(), dac_out=DAC_BANDGAP)).value))
 
-        TEMP_external=dacs_to_temperature(external_dac_values[0],external_dac_values[1])
+            #Read TEMP=SENSE and BANDGAP using external ADC and compute temperature
+            external_temperature.append(dacs_to_temperature(
+                tpx4.AdcRead(rpc.Tpx4AdcRequest(idx=helpers.cl_chip_idx(), dac_out=DAC_TEMP, external=True)).value,
+                tpx4.AdcRead(rpc.Tpx4AdcRequest(idx=helpers.cl_chip_idx(), dac_out=DAC_BANDGAP, external=True)).value))
 
-        sys.stdout.write("\n")
-        sys.stdout.flush()
-
-        print("Internal read")
-        print(internal_dac_values)
-        print("Temperature[°C] = ",TEMP_internal)
         print("---------------------------------")
-        print("External read")
-        print(external_dac_values)
-        print("Temperature[°C] = ",TEMP_external)
+        print("Internal ADC Temperature[°C] = ",internal_temperature)
+        print("---------------------------------")
+        print("External ADC Temperature[°C] = ",external_temperature)
+        print("---------------------------------")
