@@ -10,6 +10,7 @@ except ImportError:
 import sys
 import helpers
 import datetime
+import time
 import numpy as np
 
 # Computes temperature convertion equation based on sense and bandgap DACs
@@ -47,6 +48,9 @@ if __name__ == '__main__':
         internal_temperature = []
         external_temperature = []
 
+        #get time before start measurements
+        t0 = time.time_ns()
+
         for i in range(ns.number):
 
             #Read TEMP=SENSE and BANDGAP using internal ADC and compute temperature
@@ -59,8 +63,13 @@ if __name__ == '__main__':
                 tpx4.AdcRead(rpc.Tpx4AdcRequest(idx=helpers.cl_chip_idx(), dac_out=DAC_TEMP, external=True)).value,
                 tpx4.AdcRead(rpc.Tpx4AdcRequest(idx=helpers.cl_chip_idx(), dac_out=DAC_BANDGAP, external=True)).value))
 
+        #Calculate elapsed time
+        delta_t=time.time_ns()-t0
+
         print("---------------------------------")
         print(f'Read temperature - {ns.number} measurements')
+        print(f'Total elapsed time: {delta_t/1e9:.3f} s')
+        print(f'Mean time per sample: {delta_t/1e6/ns.number:.3f} ms')
         print("---------------------------------")
         print("Internal ADC Temperature")
         print(f'Mean value: {np.mean(internal_temperature):.2f} °C')
