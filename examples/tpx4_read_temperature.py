@@ -1,4 +1,6 @@
 from spidr4 import rpc
+from argparse import BooleanOptionalAction
+
 try:
     import matplotlib.pyplot as plt
 except ImportError:
@@ -14,8 +16,17 @@ def dacs_to_temperature(sense,bandgap):
     return 330.7-529.6*(sense-bandgap)
 
 if __name__ == '__main__':
+
+    args={
+        '--number': dict(type=int,default=1,help='Number of acquisitions'),
+        '--save-txt': dict(action=BooleanOptionalAction,default=True,help='save data as txt'),
+        '--test_name': dict(type=str,default='tpx4_read_temperature',help='test name to be appended to output filename'),
+        '--plot': dict(action=BooleanOptionalAction,default=True,help='control plot show'),
+        '--save-plot': dict(action=BooleanOptionalAction,default=False,help='control plot save as figure'),
+    }
+
     # Parse command-line
-    ns = helpers.cl_parse(with_chip_idx=True)
+    ns = helpers.cl_parse(with_chip_idx=True,args=args)
 
     # DAC configuration
     DAC_TEMP = rpc.TPX4_OUT_TEMP_SENSE
