@@ -25,6 +25,7 @@ if __name__ == '__main__':
     args={
         '--number': dict(type=int,default=1,help='Number of acquisitions'),
         '--acquire-period-ms': dict(type=int,default=1,help='Acquire Period in ms'),
+        '--external-only': dict(action=BooleanOptionalAction,default=False,help='Acquire only external ADC'),
         '--save-data': dict(action=BooleanOptionalAction,default=True,help='save data as txt'),
         '--test_name': dict(type=str,default='tpx4_read_temperature',help='test name to be appended to output filenames. Run datetime will always precede the name'),
         '--plot': dict(action=BooleanOptionalAction,default=True,help='control plot show'),
@@ -57,10 +58,12 @@ if __name__ == '__main__':
         for i in range(ns.number):
 
             ts = time.time_ns()
-            #Read TEMP=SENSE and BANDGAP using internal ADC and compute temperature
-            internal_temperature.append(dacs_to_temperature(
-                tpx4.AdcRead(rpc.Tpx4AdcRequest(idx=helpers.cl_chip_idx(), dac_out=DAC_TEMP)).value,
-                tpx4.AdcRead(rpc.Tpx4AdcRequest(idx=helpers.cl_chip_idx(), dac_out=DAC_BANDGAP)).value))
+
+            if not ns.external_only:
+                #Read TEMP=SENSE and BANDGAP using internal ADC and compute temperature
+                internal_temperature.append(dacs_to_temperature(
+                    tpx4.AdcRead(rpc.Tpx4AdcRequest(idx=helpers.cl_chip_idx(), dac_out=DAC_TEMP)).value,
+                    tpx4.AdcRead(rpc.Tpx4AdcRequest(idx=helpers.cl_chip_idx(), dac_out=DAC_BANDGAP)).value))
 
             #Read TEMP=SENSE and BANDGAP using external ADC and compute temperature
             external_temperature.append(dacs_to_temperature(
@@ -79,10 +82,11 @@ if __name__ == '__main__':
         print(f'Read temperature - {ns.number} measurements')
         print(f'Total elapsed time: {delta_t/1e9:.3f} s')
         print(f'Mean time per sample: {delta_t/1e6/ns.number:.3f} ms')
-        print("---------------------------------")
-        print("Internal ADC Temperature")
-        print(f'Mean value: {np.mean(internal_temperature):.2f} °C')
-        print(f'Standard deviation: {np.std(internal_temperature):.3e} °C')
+        if not ns.external_only:
+            print("---------------------------------")
+            print("Internal ADC Temperature")
+            print(f'Mean value: {np.mean(internal_temperature):.2f} °C')
+            print(f'Standard deviation: {np.std(internal_temperature):.3e} °C')
         print("---------------------------------")
         print("External ADC Temperature")
         print(f'Mean value: {np.mean(external_temperature):.2f} °C')
@@ -91,10 +95,14 @@ if __name__ == '__main__':
 
         #save txt with measurement data
         if ns.save_data:
-            np.savetxt(f'{date}_{ns.test_name}.txt', np.column_stack((internal_temperature,external_temperature)), header='internal,external', delimiter=',', fmt="%.4f")
+            if ns.external_only:
+                np.savetxt(f'{date}_{ns.test_name}.txt',external_temperature, header='external', delimiter=',', fmt="%.4f")
+            else:
+                np.savetxt(f'{date}_{ns.test_name}.txt', np.column_stack((internal_temperature,external_temperature)), header='internal,external', delimiter=',', fmt="%.4f")
 
         plt.figure()
-        plt.plot(range(ns.number),internal_temperature,'b*-',label='internal ADC')
+        if not ns.external_only:
+            plt.plot(range(ns.number),internal_temperature,'b*-',label='internal ADC')
         plt.plot(range(ns.number),external_temperature,'r*-',label='external ADC')
         plt.grid()
         plt.legend()
