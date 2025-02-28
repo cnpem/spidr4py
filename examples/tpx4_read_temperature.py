@@ -13,6 +13,8 @@ import datetime
 import time
 import numpy as np
 
+WHILE_TIMEOUT_S = 10
+
 # Computes temperature convertion equation based on sense and bandgap DACs
 # For more details, please take a look at https://timepix4.web.cern.ch/timepix4/timepix4/ChipDescription/analog_periphery.html?highlight=temperature#bandgap-and-temperature-sensor
 def dacs_to_temperature(sense,bandgap):
@@ -22,6 +24,7 @@ if __name__ == '__main__':
 
     args={
         '--number': dict(type=int,default=1,help='Number of acquisitions'),
+        '--acquire-period-ms': dict(type=int,default=1,help='Acquire Period in ms'),
         '--save-data': dict(action=BooleanOptionalAction,default=True,help='save data as txt'),
         '--test_name': dict(type=str,default='tpx4_read_temperature',help='test name to be appended to output filenames. Run datetime will always precede the name'),
         '--plot': dict(action=BooleanOptionalAction,default=True,help='control plot show'),
@@ -53,6 +56,7 @@ if __name__ == '__main__':
 
         for i in range(ns.number):
 
+            ts = time.time_ns()
             #Read TEMP=SENSE and BANDGAP using internal ADC and compute temperature
             internal_temperature.append(dacs_to_temperature(
                 tpx4.AdcRead(rpc.Tpx4AdcRequest(idx=helpers.cl_chip_idx(), dac_out=DAC_TEMP)).value,
@@ -62,6 +66,11 @@ if __name__ == '__main__':
             external_temperature.append(dacs_to_temperature(
                 tpx4.AdcRead(rpc.Tpx4AdcRequest(idx=helpers.cl_chip_idx(), dac_out=DAC_TEMP, external=True)).value,
                 tpx4.AdcRead(rpc.Tpx4AdcRequest(idx=helpers.cl_chip_idx(), dac_out=DAC_BANDGAP, external=True)).value))
+
+            while(time.time_ns()-ts < ns.acquire_period_ms*1e6):
+                if time.time_ns() - ts > WHILE_TIMEOUT_S*1e9:
+                    print(f'ERROR: {WHILE_TIMEOUT_S} seconds measurement timeout reached')
+                    break
 
         #Calculate elapsed time
         delta_t=time.time_ns()-t0
