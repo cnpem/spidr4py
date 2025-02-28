@@ -1,3 +1,17 @@
+#############################################################################################################
+#
+#  tpx4_read_temperature.py
+#
+#  Read Timepix4 internal temperature sensors using internal and external ADCs
+#
+#  Authors:
+#   Matheus Gimenez Fernandes       <matheus.fernandes@lnls.br>
+#   Mauricio Donatti                <mauricio.donatti@lnls.br>
+#
+#  February 2025
+#
+#############################################################################################################
+
 from spidr4 import rpc
 from argparse import BooleanOptionalAction
 
