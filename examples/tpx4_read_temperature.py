@@ -107,20 +107,21 @@ if __name__ == '__main__':
         print(f'Standard deviation: {np.std(external_temperature):.3e} °C')
         print("---------------------------------")
 
+        time_array_s = np.array(range(ns.number))*delta_t/1e9/ns.number
         #save txt with measurement data
         if ns.save_data:
             if ns.external_only:
-                np.savetxt(f'{date}_{ns.test_name}.txt',external_temperature, header='external', delimiter=',', fmt="%.4f")
+                np.savetxt(f'{date}_{ns.test_name}.txt',np.column_stack((time_array_s,external_temperature)), header='time(s),external ADC temperature (°C)', delimiter=',', fmt="%.4f")
             else:
-                np.savetxt(f'{date}_{ns.test_name}.txt', np.column_stack((internal_temperature,external_temperature)), header='internal,external', delimiter=',', fmt="%.4f")
+                np.savetxt(f'{date}_{ns.test_name}.txt', np.column_stack((time_array_s,internal_temperature,external_temperature)), header='time(s),internal ADC temperature (°C),external ADC temperature (°C)', delimiter=',', fmt="%.4f")
 
         plt.figure()
         if not ns.external_only:
-            plt.plot(range(ns.number),internal_temperature,'b*-',label='internal ADC')
-        plt.plot(range(ns.number),external_temperature,'r*-',label='external ADC')
+            plt.plot(time_array_s,internal_temperature,'b*-',label='internal ADC')
+        plt.plot(time_array_s,external_temperature,'r*-',label='external ADC')
         plt.grid()
         plt.legend()
-        plt.xlabel('Measurement Index')
+        plt.xlabel('Time (s)')
         plt.ylabel('Temperature (°C)')
         plt.title('Temperature Measurement')
         plt.tight_layout()
