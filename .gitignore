@@ -209,3 +209,6 @@ pyrightconfig.json
 
 *.dat
 *.gz
+*.png
+*.txt
+*.csv
