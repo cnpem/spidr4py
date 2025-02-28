@@ -38,8 +38,7 @@ if __name__ == '__main__':
         tpx4 = rpc.Timepix4Stub(channel)
         # We're going to use the internal ADC, configure at 20 MHz with 8192 ADC cycles
         tpx4.ConfigAdc(rpc.Tpx4AdcConfig(clock_ref=625000, nperiods=16*1024))
-        # Copy all DAC values, to reset later on
-        dacs = tpx4.GetDacs(rpc.EMPTY)
+
         # Resulting found values
         internal_dac_values = []
         external_dac_values = []
@@ -69,8 +68,6 @@ if __name__ == '__main__':
 
         sys.stdout.write("\n")
         sys.stdout.flush()
-        # Reset all DACs
-        tpx4.SetDacs(dacs)
 
         print("Internal read")
         print(internal_dac_values)
