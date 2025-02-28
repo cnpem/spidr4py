@@ -8,6 +8,11 @@ except ImportError:
 import sys
 import helpers
 
+# Computes temperature convertion equation based on sense and bandgap DACs
+# For more details, please take a look at https://timepix4.web.cern.ch/timepix4/timepix4/ChipDescription/analog_periphery.html?highlight=temperature#bandgap-and-temperature-sensor
+def dacs_to_temperature(sense,bandgap):
+    return 330.7-529.6*(sense-bandgap)
+
 if __name__ == '__main__':
     # Parse command-line
     ns = helpers.cl_parse(with_chip_idx=True)
@@ -39,7 +44,7 @@ if __name__ == '__main__':
         internal_dac_values.append(tpx4.AdcRead(
             rpc.Tpx4AdcRequest(idx=helpers.cl_chip_idx(), dac_out=DAC_BANDGAP)).value)
         
-        TEMP_internal=330.7-529.6*(internal_dac_values[0]-internal_dac_values[1])
+        TEMP_internal=dacs_to_temperature(internal_dac_values[0],internal_dac_values[1])
         
         # Read external ADC
         external_dac_values.append(tpx4.AdcRead(
@@ -49,7 +54,7 @@ if __name__ == '__main__':
         external_dac_values.append(tpx4.AdcRead(
             rpc.Tpx4AdcRequest(idx=helpers.cl_chip_idx(), dac_out=DAC_BANDGAP, external=True)).value)
 
-        TEMP_external=330.7-529.6*(external_dac_values[0]-external_dac_values[1])
+        TEMP_external=dacs_to_temperature(external_dac_values[0],external_dac_values[1])
 
         sys.stdout.write("\n")
         sys.stdout.flush()
