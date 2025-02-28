@@ -9,6 +9,7 @@ except ImportError:
     sys.exit(1)
 import sys
 import helpers
+import datetime
 
 # Computes temperature convertion equation based on sense and bandgap DACs
 # For more details, please take a look at https://timepix4.web.cern.ch/timepix4/timepix4/ChipDescription/analog_periphery.html?highlight=temperature#bandgap-and-temperature-sensor
@@ -24,6 +25,8 @@ if __name__ == '__main__':
         '--plot': dict(action=BooleanOptionalAction,default=True,help='control plot show'),
         '--save-plot': dict(action=BooleanOptionalAction,default=False,help='control plot save as figure'),
     }
+
+    date = datetime.datetime.now().strftime("%Y-%m-%d-%Hh%Mm%Ss")
 
     # Parse command-line
     ns = helpers.cl_parse(with_chip_idx=True,args=args)
@@ -60,3 +63,17 @@ if __name__ == '__main__':
         print("---------------------------------")
         print("External ADC Temperature[°C] = ",external_temperature)
         print("---------------------------------")
+
+        plt.figure()
+        plt.plot(range(ns.number),internal_temperature,'b*-',label='internal ADC')
+        plt.plot(range(ns.number),external_temperature,'r*-',label='external ADC')
+        plt.grid()
+        plt.legend()
+        plt.xlabel('Measurement Index')
+        plt.ylabel('Temperature (°C)')
+        plt.title('Temperature Measurement')
+        plt.tight_layout()
+        if ns.save_plot:
+            plt.savefig(f'{date}_{ns.test_name}.png', format='png',dpi=500)
+        if ns.plot:
+            plt.show()
