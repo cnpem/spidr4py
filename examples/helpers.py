@@ -14,11 +14,11 @@ _cl_ns = None
 
 def cl_parse(with_chip_idx: bool = True, args: Dict[str, dict] = dict({})):
     global _cl_ns
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("--host", type=str, help="SPIDR4 host name, or index", default=ec.DEFAULT_HOST)
     parser.add_argument("--port", type=int, help="SPIDR4 RPC port", default=ec.DEFAULT_PORT)
     if with_chip_idx:
-        parser.add_argument("--chip-idx", type=int, default=ec.DEFAULT_CHIP_INDEX)
+        parser.add_argument("--chip-idx", type=int, help="Timepix4 asic index", default=ec.DEFAULT_CHIP_INDEX)
 
     for arg, opts in args.items():
         parser.add_argument(arg, **opts)
