@@ -36,10 +36,12 @@ def dacs_to_temperature(sense,bandgap):
 
 if __name__ == '__main__':
 
+    acquisition_options = ['internal','external','both']
+
     args={
         '--number': dict(type=int,default=1,help='Number of acquisitions'),
         '--acquire-period-ms': dict(type=int,default=1,help='Acquire Period in ms'),
-        '--external-only': dict(action=BooleanOptionalAction,default=False,help='Acquire only external ADC'),
+        '--adc': dict(choices=acquisition_options,default='both',help='Choose ADC to use in temperature acquisition. (Timepix4 has an internal and chipboard an external to the ASIC)'),
         '--save-data': dict(action=BooleanOptionalAction,default=True,help='save data as txt'),
         '--test_name': dict(type=str,default='tpx4_read_temperature',help='test name to be appended to output filenames. Run datetime will always precede the name'),
         '--plot': dict(action=BooleanOptionalAction,default=True,help='control plot show'),
@@ -73,16 +75,17 @@ if __name__ == '__main__':
 
             ts = time.time_ns()
 
-            if not ns.external_only:
+            if ns.adc in ['internal','both']:
                 #Read TEMP=SENSE and BANDGAP using internal ADC and compute temperature
                 internal_temperature.append(dacs_to_temperature(
                     tpx4.AdcRead(rpc.Tpx4AdcRequest(idx=helpers.cl_chip_idx(), dac_out=DAC_TEMP)).value,
                     tpx4.AdcRead(rpc.Tpx4AdcRequest(idx=helpers.cl_chip_idx(), dac_out=DAC_BANDGAP)).value))
 
-            #Read TEMP=SENSE and BANDGAP using external ADC and compute temperature
-            external_temperature.append(dacs_to_temperature(
-                tpx4.AdcRead(rpc.Tpx4AdcRequest(idx=helpers.cl_chip_idx(), dac_out=DAC_TEMP, external=True)).value,
-                tpx4.AdcRead(rpc.Tpx4AdcRequest(idx=helpers.cl_chip_idx(), dac_out=DAC_BANDGAP, external=True)).value))
+            if ns.adc in ['external','both']:
+                #Read TEMP=SENSE and BANDGAP using external ADC and compute temperature
+                external_temperature.append(dacs_to_temperature(
+                    tpx4.AdcRead(rpc.Tpx4AdcRequest(idx=helpers.cl_chip_idx(), dac_out=DAC_TEMP, external=True)).value,
+                    tpx4.AdcRead(rpc.Tpx4AdcRequest(idx=helpers.cl_chip_idx(), dac_out=DAC_BANDGAP, external=True)).value))
 
             while(time.time_ns()-ts < ns.acquire_period_ms*1e6):
                 if time.time_ns() - ts > WHILE_TIMEOUT_S*1e9:
@@ -96,29 +99,33 @@ if __name__ == '__main__':
         print(f'Read temperature - {ns.number} measurements')
         print(f'Total elapsed time: {delta_t/1e9:.3f} s')
         print(f'Mean time per sample: {delta_t/1e6/ns.number:.3f} ms')
-        if not ns.external_only:
+        if ns.adc in ['internal','both']:
             print("---------------------------------")
             print("Internal ADC Temperature")
             print(f'Mean value: {np.mean(internal_temperature):.2f} °C')
             print(f'Standard deviation: {np.std(internal_temperature):.3e} °C')
-        print("---------------------------------")
-        print("External ADC Temperature")
-        print(f'Mean value: {np.mean(external_temperature):.2f} °C')
-        print(f'Standard deviation: {np.std(external_temperature):.3e} °C')
+        if ns.adc in ['external','both']:
+            print("---------------------------------")
+            print("External ADC Temperature")
+            print(f'Mean value: {np.mean(external_temperature):.2f} °C')
+            print(f'Standard deviation: {np.std(external_temperature):.3e} °C')
         print("---------------------------------")
 
         time_array_s = np.array(range(ns.number))*delta_t/1e9/ns.number
         #save txt with measurement data
         if ns.save_data:
-            if ns.external_only:
+            if ns.adc == 'external':
                 np.savetxt(f'{date}_{ns.test_name}.txt',np.column_stack((time_array_s,external_temperature)), header='time(s),external ADC temperature (°C)', delimiter=',', fmt="%.4f")
-            else:
+            elif ns.adc == 'both':
                 np.savetxt(f'{date}_{ns.test_name}.txt', np.column_stack((time_array_s,internal_temperature,external_temperature)), header='time(s),internal ADC temperature (°C),external ADC temperature (°C)', delimiter=',', fmt="%.4f")
+            elif ns.adc == 'internal':
+                np.savetxt(f'{date}_{ns.test_name}.txt',np.column_stack((time_array_s,internal_temperature)), header='time(s),internal ADC temperature (°C)', delimiter=',', fmt="%.4f")
 
         plt.figure()
-        if not ns.external_only:
+        if ns.adc in ['internal','both']:
             plt.plot(time_array_s,internal_temperature,'b*-',label='internal ADC')
-        plt.plot(time_array_s,external_temperature,'r*-',label='external ADC')
+        if ns.adc in ['external','both']:
+            plt.plot(time_array_s,external_temperature,'r*-',label='external ADC')
         plt.grid()
         plt.legend()
         plt.xlabel('Time (s)')
