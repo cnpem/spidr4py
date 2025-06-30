@@ -17,10 +17,41 @@ import numpy as np
 from spidr4 import rpc, tpx4tools, utils, stream
 import helpers
 
+PACKET_READ_BOTTOM= 0x4204
+PACKET_READ_TOP= 0xC204
+
 ns = helpers.cl_parse(with_chip_idx=True, args={
     "iface": dict(help="Network interface", type=str),
     "--xgbe-port": dict(help="10 GbE port", type=int, default=8192)
 })
+
+def start_frame_enable(en = True, top = True):
+    if top:
+        reg = PACKET_READ_TOP
+    else:
+        reg = PACKET_READ_BOTTOM
+
+    ans = tpx4.ReadReg(
+        rpc.ReadRegRequest(
+            idx=0,
+            #addr=tpx4regs.PACKET_READ_BOTTOM,
+            addr=reg,
+        )
+    )
+
+    if en:
+        data_en = (int.from_bytes(ans.data) | 0x0010).to_bytes(2)
+    else:
+        data_en = (int.from_bytes(ans.data) & 0xFFEF).to_bytes(2)
+
+    tpx4.WriteReg(
+        rpc.WriteRegRequest(
+            idx=0,
+            addr=reg,
+            data=data_en
+        )
+    )
+
 
 iface2find = ns.iface
 xgbe_port = ns.xgbe_port
@@ -45,10 +76,25 @@ with helpers.cl_connect() as channel:
     ctrl = rpc.ControlInfoStub(channel)
     tpx4 = rpc.Timepix4Stub(channel)
     datastream = rpc.DataStreamStub(channel)
+    trigger = rpc.TriggerStub(channel)
+
+    # Configure Trigger
+    # ------------------------------------------------------------------------------------------------------
+    trigger.SetConfig(
+        rpc.TriggerConfig(
+            shutter_input=rpc.SHUTTER_IN_SOFTWARE,
+            t0_input=rpc.T0SYNC_IN_SOFTWARE,
+            #Works only with SHUTTER_IN_AUTO_GEN or SHUTTER_IN_AUTO_GEN_EXT_START
+            #auto_shutter_open_us=10,
+            #auto_shutter_close_us=10,
+            #shutter_count=1,
+            ####################################################################################
+        )
+    )
 
     # Reset the pixel chips (will also load the default configuration)
     # ------------------------------------------------------------------------------------------------------
-    ctrl.ResetPixelChips(rpc.EMPTY)
+    # ctrl.ResetPixelChips(rpc.EMPTY)
 
     # Configure the output
     # ------------------------------------------------------------------------------------------------------
@@ -71,6 +117,10 @@ with helpers.cl_connect() as channel:
     )
     tpx4.ReadoutSetConfig(readoutCfg)
 
+    start_frame_enable(en = False, top = True)
+    start_frame_enable(en = False, top = False)
+
+
     # Configure shutter
     # ------------------------------------------------------------------------------------------------------
     tpx4.ShutterSetConfig(
@@ -83,29 +133,15 @@ with helpers.cl_connect() as channel:
         )
     )
 
-    '''
-    # Configure Trigger
-    # ------------------------------------------------------------------------------------------------------
-    tpx4.SetConfig(
-        rpc.TriggerConfig(
-            idx=helpers.cl_chip_idx(),
-            shutter_input=rpc.SHUTTER_IN_SOFTWARE,
-            t0_input=rpc.T0SYNC_IN_SOFTWARE,
-            #Works only with SHUTTER_IN_AUTO_GEN or SHUTTER_IN_AUTO_GEN_EXT_START
-            #auto_shutter_open_us=10,
-            #auto_shutter_close_us=10,
-            #####################################################################################
-            shutter_count=1,
-        )
-    )'''
-    time.sleep(1)
-
+    start_frame_enable(en = True, top = True)
+    start_frame_enable(en = True, top = False)
 
     tpx4.ShutterOpen(rpc.ChipIndex(idx=helpers.cl_chip_idx()))
     tpx4.T0Sync(rpc.ChipIndex(idx=helpers.cl_chip_idx()))
 
+    start_frame_enable(en = False, top = True)
+    start_frame_enable(en = False, top = False)
 
-    time.sleep(1)
     # Reset the pixel chips (will also load the default configuration)
     # ------------------------------------------------------------------------------------------------------
-    ctrl.ResetPixelChips(rpc.EMPTY)
+    # ctrl.ResetPixelChips(rpc.EMPTY)
