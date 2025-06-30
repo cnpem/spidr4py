@@ -1,12 +1,18 @@
-#!/bin/env python3
+#!/usr/bin/env python3
+
+#############################################################################################################
 #
-# This example configures the Timepix4 over 10 Gb Ethernet and triggers an acquisition (current 10us exposure time)
+#  tpx4_xgbe_fb.py
+#  
+#  Performs a frame-based acquisition using 10G interface
 #
-# Example using sdaq to save TOP data:  sdaq 10.255.250.4:8192
-# Example using sdaq to save TOP and BOTTOM data:  sdaq 10.255.250.4:8192,8193
+#  Authors: 
+#   Mauricio Donatti <mauricio.donatti@lnls.br>
 #
+#  July 2025
 #
-#
+#############################################################################################################
+
 import threading
 
 import grpc
@@ -19,6 +25,8 @@ import helpers
 
 PACKET_READ_BOTTOM= 0x4204
 PACKET_READ_TOP= 0xC204
+
+shutter_time_s = 10e-3
 
 ns = helpers.cl_parse(with_chip_idx=True, args={
     "iface": dict(help="Network interface", type=str),
@@ -34,7 +42,6 @@ def start_frame_enable(en = True, top = True):
     ans = tpx4.ReadReg(
         rpc.ReadRegRequest(
             idx=0,
-            #addr=tpx4regs.PACKET_READ_BOTTOM,
             addr=reg,
         )
     )
@@ -94,7 +101,7 @@ with helpers.cl_connect() as channel:
 
     # Reset the pixel chips (will also load the default configuration)
     # ------------------------------------------------------------------------------------------------------
-    # ctrl.ResetPixelChips(rpc.EMPTY)
+    ctrl.ResetPixelChips(rpc.EMPTY)
 
     # Configure the output
     # ------------------------------------------------------------------------------------------------------
@@ -128,16 +135,92 @@ with helpers.cl_connect() as channel:
             idx=helpers.cl_chip_idx(),
             mode=rpc.TPX4_SHUTTER_MODE_PROG_SINGLE,
             input=rpc.TPX4_SHUTTER_INPUT_SLOW_CONTROL,
-            prog_open_us=10,
-            prog_close_us=1
+            prog_open_us=shutter_time_s*1e6,
+            prog_close_us=1,
         )
     )
+
+    crw_regs = {
+        'CRW_WAIT_TIME_TOP': 0xC202,
+        'CRW_WAIT_TIME_BOTTOM': 0x4202,
+    }
+    #Configure CRW_WAIT_TIME Bottom and Top registers
+    for reg in crw_regs.keys():
+    
+        tpx4.WriteReg(
+            rpc.WriteRegRequest(
+                idx=0,
+                addr=crw_regs[reg],
+                data=int(1e-3*160e6).to_bytes(4) #clk_datapath default: 160 MHz
+            )
+        )
+
+        ans = tpx4.ReadReg(
+            rpc.ReadRegRequest(
+                idx=0,
+                addr=crw_regs[reg],
+            )
+        )
+
+        print(f'Register {reg:20}: {int.from_bytes(ans.data)} clock cycles, {int.from_bytes(ans.data)/(40e6)} seconds')
+        
+
+    #Monitor a few registers to understand Timpeix4 behavior
+    registers = {
+        'MATRIX_SHUTTER':0x8061,
+        'MATRIX_CRW_TOP':0xC206,
+        'MATRIX_CRW_BOT':0x4206,
+        'MATRIX_RST':0x8060,
+        'CRW_WAIT_TIME_TOP': 0xC202,
+        'CRW_WAIT_TIME_BOTTOM': 0x4202,
+        'STATUS_MON_TOP': 0xCC02,
+        'STATUS_MON_BOT': 0x4C02,
+        'PPROC_TOP':0xCC03,
+        'PPROC_BOT':0x4C03,
+        }
+
+    for reg in registers.keys():
+        
+        ans = tpx4.ReadReg(
+            rpc.ReadRegRequest(
+                idx=0,
+                addr=registers[reg],
+            )
+        )
+        print(f'Register {reg:20} 0x{registers[reg]:02X}: 0b{int.from_bytes(ans.data):016b}')
+    
+    #Enable Control packets, like shutter to ensure image sync at post-processing
+    registers_to_write = {
+        'STATUS_MON_TOP': [0xCC02,0b0000000000000111],
+        'STATUS_MON_BOT': [0x4C02,0b0000000000000111],
+        'PPROC_TOP':[0xCC03,0b0100000000000000],
+        'PPROC_BOT':[0x4C03,0b0100000000000000],
+        }
+
+    for reg in registers_to_write.keys():
+
+        tpx4.WriteReg(
+            rpc.WriteRegRequest(
+                idx=0,
+                addr=registers_to_write[reg][0],
+                data=int(registers_to_write[reg][1]).to_bytes(2)
+            )
+        )
+        ans = tpx4.ReadReg(
+            rpc.ReadRegRequest(
+                idx=0,
+                addr=registers_to_write[reg][0],
+            )
+        )
+        print(f'Register {reg:20} 0x{registers_to_write[reg][0]:02X}: 0b{int.from_bytes(ans.data):016b}')
 
     start_frame_enable(en = True, top = True)
     start_frame_enable(en = True, top = False)
 
     tpx4.ShutterOpen(rpc.ChipIndex(idx=helpers.cl_chip_idx()))
     tpx4.T0Sync(rpc.ChipIndex(idx=helpers.cl_chip_idx()))
+
+    time.sleep(shutter_time_s)
 
     start_frame_enable(en = False, top = True)
     start_frame_enable(en = False, top = False)
