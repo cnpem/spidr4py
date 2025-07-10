@@ -129,6 +129,7 @@ for file in filenames:
     data_counter = 0
     segment_counter = [0, 0, 0, 0, 0, 0, 0, 0]
     segment_address = 0
+    shutter_rise = shutter_fall = False
     
     # Packet Coordinates (Pixel 0)
     x = 0
@@ -140,28 +141,31 @@ for file in filenames:
     for packet_counter,packet in enumerate(packets):
 
         decoded_packet = DecodePacket(packet)
+
+        # Look for Shutter Rise packet
+        if decoded_packet.name == 'SHUTTER_RISE' and state != 'SEGMENT':
+            shutter_rise = True
+            shutter_fall = False
+            if args.debug >= 1: print(f"{bcolors.CONTROL}{packet_counter:06} - {decoded_packet.half} 0x{decoded_packet.header:02X}: {decoded_packet.name}{bcolors.ENDC}")
+
+        # Look for a shutter fall package
+        elif decoded_packet.name == 'SHUTTER_FALL' and state != 'SEGMENT':
+            if args.debug >= 1: print(f"{bcolors.CONTROL}{packet_counter:06} - {decoded_packet.half} 0x{decoded_packet.header:02X}: {decoded_packet.name}{bcolors.ENDC}")
+            shutter_fall = True
+
         # FSM definition
         match state:
 
             case 'IDLE':
-                # Look for Shutter Rise packet
-                if decoded_packet.name == 'SHUTTER_RISE':
-                    state = 'WAITING_START'
-                    if args.debug >= 1: print(f"{bcolors.CONTROL}{packet_counter:06} - {decoded_packet.half} 0x{decoded_packet.header:02X}: {decoded_packet.name}{bcolors.ENDC}")
-                # See if a control packet arrived during Idle State
-                elif args.debug >= 2 and decoded_packet.control == True:
-                    print(f"{bcolors.WARNING}{packet_counter:06} - {decoded_packet.half} CONTROL PACKET 0x{decoded_packet.header:02X}: {decoded_packet.name}{bcolors.ENDC}")
-
-            case 'WAITING_START':
                 # Look for Frame Start packet
-                if decoded_packet.name == 'FRAME_START':
+                if decoded_packet.name == 'FRAME_START' and shutter_rise:
                     readout_mode = decoded_packet.pc_mode
                     matrix = np.zeros((256, 448), dtype=np.uint8 if readout_mode == '8bit' else np.uint16)                                  
                     if args.debug >= 1: print(f"{bcolors.FRAME}{packet_counter:06} - {decoded_packet.half} {decoded_packet.pc_mode} {decoded_packet.name}: Frame {frame_counter}.{bcolors.ENDC}")
                     state = 'FRAME'
-                elif decoded_packet.name == 'SHUTTER_FALL':
-                    if args.debug >= 1: print(f"{bcolors.CONTROL}{packet_counter:06} - {decoded_packet.half} 0x{decoded_packet.header:02X}: {decoded_packet.name}{bcolors.ENDC}")
-                    state = 'IDLE'
+                    #If we received a shutter fall, this one is the last frame
+                    if shutter_fall == True:
+                        shutter_rise = False
                 # See if a control packet arrived during Idle State
                 elif  args.debug >= 2 and decoded_packet.control == True:
                     print(f"{bcolors.WARNING}{packet_counter:06} - {decoded_packet.half} CONTROL PACKET 0x{decoded_packet.header:02X}: {decoded_packet.name}{bcolors.ENDC}")
@@ -188,7 +192,7 @@ for file in filenames:
                     # Add the new matrix to frames array
                     frames.append(matrix)
                     # Change state from 'FRAME' to 'IDLE'
-                    state = 'WAITING_START'
+                    state = 'IDLE'
 
             case 'SEGMENT':
                     
