@@ -26,11 +26,14 @@ import helpers
 PACKET_READ_BOTTOM= 0x4204
 PACKET_READ_TOP= 0xC204
 
-shutter_time_s = 10e-3
+counter_options = ['8bit','16bit']
 
 ns = helpers.cl_parse(with_chip_idx=True, args={
     "iface": dict(help="Network interface", type=str),
-    "--xgbe-port": dict(help="10 GbE port", type=int, default=8192)
+    "--xgbe-port": dict(help="10 GbE port", type=int, default=8192),
+    "--exposure-time-us": dict(type=int,default=10,help='Exposure time (shutter time) in microseconds'),
+    "--crw-time-us": dict(type=int,default=1000,help='Continuous read-write time in microseconds'),
+    '--counter': dict(choices=counter_options,default='8bit',help='Frame based counter depth'),
 })
 
 def start_frame_enable(en = True, top = True):
@@ -58,7 +61,6 @@ def start_frame_enable(en = True, top = True):
             data=data_en
         )
     )
-
 
 iface2find = ns.iface
 xgbe_port = ns.xgbe_port
@@ -119,14 +121,13 @@ with helpers.cl_connect() as channel:
     # ------------------------------------------------------------------------------------------------------
     readoutCfg = rpc.Tpx4ReadoutConfig(
         idx=helpers.cl_chip_idx(),
-        mode=rpc.TPX4_READOUT_FRAME8,
+        mode=rpc.TPX4_READOUT_FRAME8 if ns.counter == '8bit' else rpc.TPX4_READOUT_FRAME16,
         pc24b_thr=100
     )
     tpx4.ReadoutSetConfig(readoutCfg)
 
     start_frame_enable(en = False, top = True)
     start_frame_enable(en = False, top = False)
-
 
     # Configure shutter
     # ------------------------------------------------------------------------------------------------------
@@ -135,7 +136,7 @@ with helpers.cl_connect() as channel:
             idx=helpers.cl_chip_idx(),
             mode=rpc.TPX4_SHUTTER_MODE_PROG_SINGLE,
             input=rpc.TPX4_SHUTTER_INPUT_SLOW_CONTROL,
-            prog_open_us=shutter_time_s*1e6,
+            prog_open_us=ns.exposure_time_us,
             prog_close_us=1,
         )
     )
@@ -144,6 +145,16 @@ with helpers.cl_connect() as channel:
         'CRW_WAIT_TIME_TOP': 0xC202,
         'CRW_WAIT_TIME_BOTTOM': 0x4202,
     }
+
+    #Calculate crw registers needed value:
+    Nlinks = 1                 #default for spidr4 readout 10Gbps mode
+    LinkSpeed_Mbps = 2560      #default for spidr4 readout 10Gbps mode
+    clk_datapath_MHz = 160     #clk_datapath default config
+    counter_depth = 8 if ns.counter == '8bit' else 16
+    readout_time_frame_us = 256*448*counter_depth/(LinkSpeed_Mbps*Nlinks)
+    crw_regs_val = int((ns.crw_time_us - readout_time_frame_us)*clk_datapath_MHz)
+    print(f'Readout time per frame: {readout_time_frame_us} us. crw_wait_time register value: {crw_regs_val}')
+
     #Configure CRW_WAIT_TIME Bottom and Top registers
     for reg in crw_regs.keys():
     
@@ -151,7 +162,7 @@ with helpers.cl_connect() as channel:
             rpc.WriteRegRequest(
                 idx=0,
                 addr=crw_regs[reg],
-                data=int(1e-3*160e6).to_bytes(4) #clk_datapath default: 160 MHz
+                data=crw_regs_val.to_bytes(4)
             )
         )
 
@@ -162,7 +173,7 @@ with helpers.cl_connect() as channel:
             )
         )
 
-        print(f'Register {reg:20}: {int.from_bytes(ans.data)} clock cycles, {int.from_bytes(ans.data)/(40e6)} seconds')
+        print(f'Register {reg:20}: {int.from_bytes(ans.data)} clock cycles, {int.from_bytes(ans.data)/(clk_datapath_MHz*1e6)} seconds')
         
 
     #Monitor a few registers to understand Timpeix4 behavior
@@ -171,8 +182,6 @@ with helpers.cl_connect() as channel:
         'MATRIX_CRW_TOP':0xC206,
         'MATRIX_CRW_BOT':0x4206,
         'MATRIX_RST':0x8060,
-        'CRW_WAIT_TIME_TOP': 0xC202,
-        'CRW_WAIT_TIME_BOTTOM': 0x4202,
         'STATUS_MON_TOP': 0xCC02,
         'STATUS_MON_BOT': 0x4C02,
         'PPROC_TOP':0xCC03,
@@ -220,7 +229,7 @@ with helpers.cl_connect() as channel:
     tpx4.ShutterOpen(rpc.ChipIndex(idx=helpers.cl_chip_idx()))
     tpx4.T0Sync(rpc.ChipIndex(idx=helpers.cl_chip_idx()))
 
-    time.sleep(shutter_time_s)
+    time.sleep(ns.exposure_time_us/1e6)
 
     start_frame_enable(en = False, top = True)
     start_frame_enable(en = False, top = False)
