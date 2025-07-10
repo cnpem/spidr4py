@@ -22,6 +22,7 @@ import time
 import numpy as np
 from spidr4 import rpc, tpx4tools, utils, stream
 import helpers
+from argparse import BooleanOptionalAction
 
 PACKET_READ_BOTTOM= 0x4204
 PACKET_READ_TOP= 0xC204
@@ -34,6 +35,7 @@ ns = helpers.cl_parse(with_chip_idx=True, args={
     "--exposure-time-us": dict(type=int,default=10,help='Exposure time (shutter time) in microseconds'),
     "--crw-time-us": dict(type=int,default=1000,help='Continuous read-write time in microseconds'),
     '--counter': dict(choices=counter_options,default='8bit',help='Frame based counter depth'),
+    '--reset': dict(action=BooleanOptionalAction,default=True,help='reset Timepix4 ASIC at the beginning'),
 })
 
 def start_frame_enable(en = True, top = True):
@@ -103,7 +105,9 @@ with helpers.cl_connect() as channel:
 
     # Reset the pixel chips (will also load the default configuration)
     # ------------------------------------------------------------------------------------------------------
-    ctrl.ResetPixelChips(rpc.EMPTY)
+    if ns.reset:
+        print('Resetting the pixel chips (load default config)')
+        ctrl.ResetPixelChips(rpc.EMPTY)
 
     # Configure the output
     # ------------------------------------------------------------------------------------------------------
@@ -233,7 +237,3 @@ with helpers.cl_connect() as channel:
 
     start_frame_enable(en = False, top = True)
     start_frame_enable(en = False, top = False)
-
-    # Reset the pixel chips (will also load the default configuration)
-    # ------------------------------------------------------------------------------------------------------
-    # ctrl.ResetPixelChips(rpc.EMPTY)
