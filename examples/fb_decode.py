@@ -17,20 +17,30 @@
 import numpy as np
 import glob
 import os
-import matplotlib.pyplot as plt
 import h5py
 import struct
+import argparse
+import time
 
-##################################################################################################################################################
-#INPUT VARIABLES TO BE SCRIPT ARGUMENTS IN THE NEAR FUTURE
-##################################################################################################################################################
-save_file = True
-plot = False
-# Get binary file names in path
-path = './out_desespero/'
-#Debug will print possible control packages inside data
-debug = False
-##################################################################################################################################################
+def dir_path(path):
+    if os.path.isdir(path):
+        return path
+    else:
+        raise argparse.ArgumentTypeError(f"readable_dir:{path} is not a valid path")
+
+#create a parser to properly parse script arguments
+parser = argparse.ArgumentParser(
+    prog='fb_decode.py',
+    description='performs a Timepix4 frame based decode',
+    epilog='This script interprets frame based data and save image files',
+    formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+
+parser.add_argument('--path',type=dir_path,required=True,help='path to input and output file')
+parser.add_argument('--save-file',action=argparse.BooleanOptionalAction,default=True,help='save hdf5 output file')
+parser.add_argument('--filename',type=str,default='fb_decode',help='test name to be appended to output filename')
+parser.add_argument('--debug',type=int,choices=range(3),default=1,help='Print debug level. 0: no print, 1: standard, 2: verbose')
+
+args = parser.parse_args()
 
 class bcolors:
     ERROR = '\033[91m'
@@ -92,7 +102,7 @@ class DecodePacket:
     
         self.array8bit = struct.unpack('8B', packet)
 
-filenames = sorted(glob.glob(path + '*.dat*')) # SPIDR4 sdaq uses .dat
+filenames = sorted(glob.glob(os.path.join(args.path,'*.dat*'))) # SPIDR4 sdaq uses .dat
 print(f'Reading files: {filenames}')
 
 # Create a matrixes array to plot
@@ -101,6 +111,7 @@ matrixes = []
 # For each binary file
 for file in filenames:
 
+    print('------------------------------------------------------------------------------------------------------------------------------------------------------------------------------')
     # Show wich file is being read
     print(f"Decoding File: {file}")
 
@@ -118,11 +129,12 @@ for file in filenames:
     data_counter = 0
     segment_counter = [0, 0, 0, 0, 0, 0, 0, 0]
     segment_address = 0
-    last_control = 0
     
     # Packet Coordinates (Pixel 0)
     x = 0
     y = 0
+
+    loop_time = time.time()
     
     # Analyze each packet in the file
     for packet_counter,packet in enumerate(packets):
@@ -135,9 +147,9 @@ for file in filenames:
                 # Look for Shutter Rise packet
                 if decoded_packet.name == 'SHUTTER_RISE':
                     state = 'WAITING_START'
-                    print(f"{bcolors.CONTROL}{packet_counter:06} - {decoded_packet.half} 0x{decoded_packet.header:02X}: {decoded_packet.name}{bcolors.ENDC}")
+                    if args.debug >= 1: print(f"{bcolors.CONTROL}{packet_counter:06} - {decoded_packet.half} 0x{decoded_packet.header:02X}: {decoded_packet.name}{bcolors.ENDC}")
                 # See if a control packet arrived during Idle State
-                elif decoded_packet.control == True and debug:
+                elif args.debug >= 2 and decoded_packet.control == True:
                     print(f"{bcolors.WARNING}{packet_counter:06} - {decoded_packet.half} CONTROL PACKET 0x{decoded_packet.header:02X}: {decoded_packet.name}{bcolors.ENDC}")
 
             case 'WAITING_START':
@@ -145,14 +157,13 @@ for file in filenames:
                 if decoded_packet.name == 'FRAME_START':
                     readout_mode = decoded_packet.pc_mode
                     matrix = np.zeros((256, 448), dtype=np.uint8 if readout_mode == '8bit' else np.uint16)                                  
-                    print(f"{bcolors.FRAME}{packet_counter:06} - {decoded_packet.half} {decoded_packet.pc_mode} {decoded_packet.name}: Frame {frame_counter}. {packet_counter-last_control-1} packets from last control{bcolors.ENDC}")
+                    if args.debug >= 1: print(f"{bcolors.FRAME}{packet_counter:06} - {decoded_packet.half} {decoded_packet.pc_mode} {decoded_packet.name}: Frame {frame_counter}.{bcolors.ENDC}")
                     state = 'FRAME'
-                    last_control = packet_counter
                 elif decoded_packet.name == 'SHUTTER_FALL':
-                    print(f"{bcolors.CONTROL}{packet_counter:06} - {decoded_packet.half} 0x{decoded_packet.header:02X}: {decoded_packet.name}{bcolors.ENDC}")
+                    if args.debug >= 1: print(f"{bcolors.CONTROL}{packet_counter:06} - {decoded_packet.half} 0x{decoded_packet.header:02X}: {decoded_packet.name}{bcolors.ENDC}")
                     state = 'IDLE'
                 # See if a control packet arrived during Idle State
-                elif decoded_packet.control == True and debug:
+                elif  args.debug >= 2 and decoded_packet.control == True:
                     print(f"{bcolors.WARNING}{packet_counter:06} - {decoded_packet.half} CONTROL PACKET 0x{decoded_packet.header:02X}: {decoded_packet.name}{bcolors.ENDC}")
                 
             case 'FRAME': 
@@ -162,16 +173,14 @@ for file in filenames:
                     segment_address = decoded_packet.segment
                     # Start counting data packets read from the next segment
                     data_counter = 0
-                    # Print
-                    print(f"{packet_counter:06} - {decoded_packet.half} {decoded_packet.pc_mode} {decoded_packet.name} Segment {segment_address}. {packet_counter-last_control-1} packets from last control")
+                    if args.debug >= 1: print(f"{packet_counter:06} - {decoded_packet.half} {decoded_packet.pc_mode} {decoded_packet.name} Segment {segment_address}.")
                     # Change state from 'FRAME' to 'SEGMENT'
                     state = 'SEGMENT'
-                    last_control = packet_counter
                     
                 # Frame End packet
                 elif decoded_packet.name == 'FRAME_END':
                     # Print
-                    print(f"{bcolors.FRAME}{packet_counter:06} - {decoded_packet.half} {decoded_packet.pc_mode} {decoded_packet.name}: Frame {frame_counter}. {packet_counter-last_control-1} packets from last control{bcolors.ENDC}")
+                    if args.debug >= 1: print(f"{bcolors.FRAME}{packet_counter:06} - {decoded_packet.half} {decoded_packet.pc_mode} {decoded_packet.name}: Frame {frame_counter}.{bcolors.ENDC}")
                     # Increment frame counter
                     frame_counter = frame_counter + 1
                     # Restart segments counter
@@ -180,7 +189,6 @@ for file in filenames:
                     frames.append(matrix)
                     # Change state from 'FRAME' to 'IDLE'
                     state = 'WAITING_START'
-                    last_control = packet_counter
 
             case 'SEGMENT':
                     
@@ -188,24 +196,22 @@ for file in filenames:
                 if decoded_packet.name == 'SEGMENT_END':
 
                     if (data_counter != 1792):
-                        print(f"{bcolors.ERROR}{packet_counter:06} - ERROR: Data packets counter different than expected. {data_counter} packets. {bcolors.ENDC}")
+                        print(f"{bcolors.ERROR}{packet_counter:06} - ERROR: Data packets counter different than 1792: {data_counter} packets received. {decoded_packet.half} Frame {frame_counter} Segment {segment_address} {bcolors.ENDC}")
 
                     # Get the address of ended segment
                     segment_address = decoded_packet.segment
                     # Count how many times each segment has been read in a frame
                     segment_counter[segment_address] = segment_counter[segment_address] + 1
                     # Print
-                    print(f"{packet_counter:06} - {decoded_packet.half} {decoded_packet.pc_mode} {decoded_packet.name} Segment {segment_address}. {packet_counter-last_control-1} packets from last control")
+                    if args.debug >= 1: print(f"{packet_counter:06} - {decoded_packet.half} {decoded_packet.pc_mode} {decoded_packet.name} Segment {segment_address}.")
 
                     # Change state from 'SEGMENT' to 'FRAME'
                     state = 'FRAME'
-                    #print(f"Data counter = {data_counter}")
-                    last_control = packet_counter
                 
                 # Data packet                
                 else:
                     #Possible Control Packet During Data
-                    if decoded_packet.control == True and debug == True:
+                    if args.debug >= 2 and decoded_packet.control == True:
                         print(f"{bcolors.DEBUG}{packet_counter:06} - {decoded_packet.half} Possible CONTROL PACKET - 0x{decoded_packet.header:02X}: {decoded_packet.name}{bcolors.ENDC}")
                 
                     if data_counter < 1792:
@@ -244,21 +250,16 @@ for file in filenames:
     # Add new frames to matrixes array
     matrixes.append(frames)
 
+    iter_time = (time.time() - loop_time)*1000
+    print(f'Decode time {iter_time:.3f} ms. Time per frame: {iter_time/frame_counter:.3f} ms')
+
 # Concatenate botton and top matrixes to construct full images
 images = []
 for i in range(len(frames)):
     images.append(np.concatenate((matrixes[1][i], np.rot90(matrixes[0][i], 2)), axis = 0))
 
-if plot == True:
-    image_to_plot = int(input('Choose wich image you want to plot: (-1 to pass)'))
-
-    if image_to_plot >= 0:
-        # Plot reconstructed image
-        plt.imshow(images[image_to_plot])
-        plt.colorbar()
-
-if save_file == True:
-  print(f'Saving image as: {path + 'LNLS_images.hdf5'}')
+if args.save_file == True:
+  print(f'Saving output image image in {args.path} as {args.filename}')
   # Save images in a .hdf5 file
-  with h5py.File(os.path.join(path,'LNLS_images.hdf5'), mode = 'w') as hdf5_file:
+  with h5py.File(os.path.join(args.path,f'{args.filename}.hdf5'), mode = 'w') as hdf5_file:
       hdf5_file.create_dataset('/entry/data/data', data = images)
