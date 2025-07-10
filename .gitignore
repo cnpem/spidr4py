@@ -207,8 +207,9 @@ pyrightconfig.json
 
 # Ignore generated ooutput files (spidr4py specific)
 
-*.dat
+*.dat*
 *.gz
 *.png
 *.txt
 *.csv
+*.hdf5
