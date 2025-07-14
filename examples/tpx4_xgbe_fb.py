@@ -18,6 +18,7 @@ import threading
 import grpc
 import sys
 import time
+import os
 
 import numpy as np
 from spidr4 import rpc, tpx4tools, utils, stream
@@ -36,6 +37,8 @@ ns = helpers.cl_parse(with_chip_idx=True, args={
     "--crw-time-us": dict(type=int,default=1000,help='Continuous read-write time in microseconds'),
     '--counter': dict(choices=counter_options,default='8bit',help='Frame based counter depth'),
     '--reset': dict(action=BooleanOptionalAction,default=True,help='reset Timepix4 ASIC at the beginning'),
+    '--equalize':dict(action=BooleanOptionalAction,default=True,help='load equalization'),
+    '--equalization-path':dict(type=str,default='equalization',help='path to input and output file')
 })
 
 def get_link_bw(top = True, check_PLL = False, optimize_PLL = False):
@@ -169,6 +172,46 @@ with helpers.cl_connect() as channel:
     if ns.reset:
         print('Resetting the pixel chips (load default config)')
         ctrl.ResetPixelChips(rpc.EMPTY)
+
+    # Configure Pixel Matrix - load equalization and mask bits
+    # ------------------------------------------------------------------------------------------------------
+    if ns.equalize == True:
+        eq_file = 'eq_mask_fb.dat'
+        mask_file = 'eq_codes_fb.dat'
+        if os.path.isdir(ns.equalization_path) and os.path.isfile(os.path.join(ns.equalization_path,eq_file)) and os.path.isfile(os.path.join(ns.equalization_path,mask_file)):
+
+            print(f'Loading equalization')
+            pixel_cfg = tpx4tools.PixelConfig(dac=31, power_enable=False, tp_enable=False, mask=True).word
+            pixel_cfg_mtx = np.full((512, 448), pixel_cfg, dtype=np.uint8)
+
+            #loads equalization and mask bits from file
+
+            mask=np.loadtxt(os.path.join(ns.equalization_path,eq_file), dtype=np.bool)
+            equal=np.loadtxt(os.path.join(ns.equalization_path,mask_file), dtype=int)
+
+            #create an empty array for pixel config
+            pixelConfig = np.zeros(shape=(2,224,16,32), dtype=np.uint8)
+
+            #configure pixels and calculate number of masked ones
+            num_mask_pixels=0
+            for X in range(0,448,1):
+                for Y in range(0,512,1):
+                    #print(f'Pixel X:{X:03d} Y:{Y:03d} Equal: {equal[X][Y]:02d} Mask: {mask[X][Y]}')
+                    pixel_cfg_mtx[Y][X] = tpx4tools.PixelConfig(dac=equal[X][Y], power_enable=not(mask[X][Y]), tp_enable=False, mask=mask[X][Y]).word
+                    if mask[X][Y]:
+                        num_mask_pixels+=1
+            print(f'Num masked pixels: {num_mask_pixels}')
+
+            config_blob = tpx4tools.logic2chip_cfg_matrix(pixel_cfg_mtx)
+
+            tpx4.ConfigPixels(
+                    rpc.Tpx4PixelConfig(
+                            idx=helpers.cl_chip_idx(),
+                            config=config_blob.tobytes()
+                    )
+            )
+        else:
+            print(f"ERROR: {ns.equalization_path} is not a valid path or equalization files not found. Aborting equalization")
 
     # Configure the output
     # ------------------------------------------------------------------------------------------------------
