@@ -38,6 +38,67 @@ ns = helpers.cl_parse(with_chip_idx=True, args={
     '--reset': dict(action=BooleanOptionalAction,default=True,help='reset Timepix4 ASIC at the beginning'),
 })
 
+def get_link_bw(top = True, check_PLL = False, optimize_PLL = False):
+
+    #get high_BW_en at GWT_CONF register to check 160 or 320 MHz mode
+    ans = tpx4.ReadReg(
+        rpc.ReadRegRequest(
+            idx=0,
+            addr=0xC207 if top == True else 0x4207,
+        )
+    )
+    high_bw_en = (int.from_bytes(ans.data) >> 24) & 0b1
+
+    #get speed_div_log2 at PCSTX_CTRL register to check PLL divider
+    ans = tpx4.ReadReg(
+        rpc.ReadRegRequest(
+            idx=0,
+            addr=0xCC01 if top == True else 0x4C01,
+        )
+    )
+
+    speed_div_log_2 = int.from_bytes(ans.data) & 0b1111
+
+    if check_PLL: check_optimal_PLL(top = top)
+
+    if optimize_PLL:
+        print('Optimizing PLL setting')
+        ans = tpx4.WriteReg(
+            rpc.WriteRegRequest(
+                idx=0,
+                addr=0xC208 if top == True else 0x4208,
+                #      res_PLL    | icp_PLL   | adj_cp_PLL | adj_vco_PLL| cap_small_PLL | cap_large_PLL | rst_vcntr_vdd_PLL
+                data= (0b1110<<27 | 0b111<<24 | 0b1111<<20 | 0b0000<<16 | 0b1111<<12    | 0b0011<<8     | 0x00).to_bytes(4)
+            )
+        )
+        check_optimal_PLL(top = top)
+
+    return 5120*(2**(high_bw_en))/(2**(speed_div_log_2))
+
+def check_optimal_PLL(top = True):
+    if check_optimal_PLL:
+        #get GWT_CONF_PLL register
+        ans = tpx4.ReadReg(
+            rpc.ReadRegRequest(
+                idx=0,
+                addr=0xC208 if top == True else 0x4208,
+            )
+        )
+        reg_data = int.from_bytes(ans.data)
+        #extract fields
+        res_PLL = (reg_data>>27)&0xF
+        icp_PLL = (reg_data>>24)&0b111
+        adj_cp_PLL = (reg_data>>20)&0xF
+        adj_vco_PLL = (reg_data>>16)&0xF
+        cap_small_PLL = (reg_data>>12)&0xF
+        cap_large_PLL = (reg_data>>8)&0xF
+        rst_vcntr_vdd_PLL = (reg_data)&0xFF
+
+        print(f'res_PLL={res_PLL:04b}\t icp_PLL={icp_PLL:03b}\t adj_cp_PLL={adj_cp_PLL:04b}\t adj_vco_PLL={adj_vco_PLL:04b}\t cap_small_PLL={cap_small_PLL:04b}\t cap_large_PLL={cap_large_PLL:04b}\t rst_vcntr_vdd_PLL={rst_vcntr_vdd_PLL:08b}')
+
+        if icp_PLL != 7 or adj_cp_PLL != 0xF or cap_small_PLL != 0xF:
+            print('WARNING: PLL not optimized. See https://timepix4.web.cern.ch/timepix4/timepix4/ChipOperation/configuration_output_links.html')
+
 def start_frame_enable(en = True, top = True):
     if top:
         reg = PACKET_READ_TOP
@@ -145,19 +206,31 @@ with helpers.cl_connect() as channel:
         )
     )
 
+    # Configure the output
+    # ------------------------------------------------------------------------------------------------------
+
+    link_top = get_link_bw(top = True,check_PLL=True,optimize_PLL=True)
+    link_bot = get_link_bw(top = False,check_PLL=True,optimize_PLL=True)
+
+    print(f'Link speed TOP: {link_top} Mbps')
+    print(f'Link speed BOT: {link_bot} Mbps')
+
+    #Calculate crw registers needed value:
+    Nlinks = 1                                    #default for spidr4 readout 10Gbps mode
+    LinkSpeed_Mbps = get_link_bw(top = True)      #default for spidr4 readout 10Gbps mode
+    clk_datapath_MHz = 160                        #clk_datapath default config
+    counter_depth = 8 if ns.counter == '8bit' else 16
+    readout_time_frame_us = 256*448*counter_depth/(LinkSpeed_Mbps*Nlinks)
+    crw_regs_val = int((ns.crw_time_us - readout_time_frame_us)*clk_datapath_MHz)
+    if crw_regs_val < 0:
+        print(f'ERROR: crw wait time to short for {LinkSpeed_Mbps} Mbps link speed. Setting to 0 cycles. {crw_regs_val} cannot be negative')
+        crw_regs_val = 0
+    print(f'Readout time per frame: {readout_time_frame_us} us. crw_wait_time register value: {crw_regs_val}')
+
     crw_regs = {
         'CRW_WAIT_TIME_TOP': 0xC202,
         'CRW_WAIT_TIME_BOTTOM': 0x4202,
     }
-
-    #Calculate crw registers needed value:
-    Nlinks = 1                 #default for spidr4 readout 10Gbps mode
-    LinkSpeed_Mbps = 2560      #default for spidr4 readout 10Gbps mode
-    clk_datapath_MHz = 160     #clk_datapath default config
-    counter_depth = 8 if ns.counter == '8bit' else 16
-    readout_time_frame_us = 256*448*counter_depth/(LinkSpeed_Mbps*Nlinks)
-    crw_regs_val = int((ns.crw_time_us - readout_time_frame_us)*clk_datapath_MHz)
-    print(f'Readout time per frame: {readout_time_frame_us} us. crw_wait_time register value: {crw_regs_val}')
 
     #Configure CRW_WAIT_TIME Bottom and Top registers
     for reg in crw_regs.keys():
@@ -190,6 +263,12 @@ with helpers.cl_connect() as channel:
         'STATUS_MON_BOT': 0x4C02,
         'PPROC_TOP':0xCC03,
         'PPROC_BOT':0x4C03,
+        'GWT_CONF_TOP':0xC207,
+        'GWT_CONF_BOT':0x4207,
+        'GWT_CONF_PLL_TOP':0xC208,
+        'GWT_CONF_PLL_BOT':0x4208,
+        'PCSTX_CTRL_TOP':0xCC01,
+        'PCSTX_CTRL_BOT':0x4C01,
         }
 
     for reg in registers.keys():
