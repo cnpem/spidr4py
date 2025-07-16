@@ -37,6 +37,7 @@ parser = argparse.ArgumentParser(
 
 parser.add_argument('--path',type=dir_path,required=True,help='path to input and output file')
 parser.add_argument('--save-file',action=argparse.BooleanOptionalAction,default=True,help='save hdf5 output file')
+parser.add_argument('--ignore-shutter',action=argparse.BooleanOptionalAction,default=False,help='do not search for shutter rise/fall and decode all frames')
 parser.add_argument('--filename',type=str,default='fb_decode',help='test name to be appended to output filename')
 parser.add_argument('--debug',type=int,choices=range(3),default=1,help='Print debug level. 0: no print, 1: standard, 2: verbose')
 
@@ -49,6 +50,7 @@ class bcolors:
     WARNING = '\033[33m'
     DEBUG = '\033[94m'
     FRAME = "\033[95m"
+    SDAQ = '\033[96m'
 
 class DecodePacket:
     def __init__(self,packet):
@@ -70,7 +72,6 @@ class DecodePacket:
         else:
             self.pc_mode = 'unknown'
 
-        self.control = True
         #Use 8bit header to find control packet
         match self.header:
             case 0xE0:
@@ -97,8 +98,8 @@ class DecodePacket:
                 self.name = 'SEGMENT_END'
             case _:
                 self.name = 'DATA'
-                #set control to False if no decoded name is found
-                self.control = False
+
+        self.control = False if self.name == 'DATA' else True
     
         self.array8bit = struct.unpack('8B', packet)
 
@@ -136,89 +137,101 @@ for file in filenames:
     y = 0
 
     loop_time = time.time()
-    
+
+    spidr_valid_frame = False
     # Analyze each packet in the file
     for packet_counter,packet in enumerate(packets):
 
-        decoded_packet = DecodePacket(packet)
+        #Filter spidr4 headers and control packets
+        #See https://spidr4.nikhef.nl/docs/html/software/dataformat.html
+        if spidr_valid_frame == False and (packet & 0xFFFF000000000000) == 0x0002000000000000:
+            spidr_valid_frame = True
+            spidr_frame_counter = 0
+            spidr_content_size = packet & 0xFFFFFFFF
+            if args.debug >= 1: print(f'{bcolors.SDAQ}{packet_counter:06} - Spidr4 frame header packet: 0x{packet:016X}. Content size: {spidr_content_size} packets{bcolors.ENDC}')
 
-        # Look for Shutter Rise packet
-        if decoded_packet.name == 'SHUTTER_RISE' and state != 'SEGMENT':
-            shutter_rise = True
-            shutter_fall = False
-            if args.debug >= 1: print(f"{bcolors.CONTROL}{packet_counter:06} - {decoded_packet.half} 0x{decoded_packet.header:02X}: {decoded_packet.name}{bcolors.ENDC}")
+        elif spidr_valid_frame == True:
+            #Increment spidr frame counter and check if the current packet is the spidr frame end
+            spidr_frame_counter+=1
+            if spidr_frame_counter == spidr_content_size:
+                spidr_valid_frame = False
+                if args.debug >= 1: print(f'{bcolors.SDAQ}{packet_counter:06} - Spidr4 last frame packet. Counter {spidr_frame_counter}. Content size: {spidr_content_size} packets{bcolors.ENDC}')
 
-        # Look for a shutter fall package
-        elif decoded_packet.name == 'SHUTTER_FALL' and state != 'SEGMENT':
-            if args.debug >= 1: print(f"{bcolors.CONTROL}{packet_counter:06} - {decoded_packet.half} 0x{decoded_packet.header:02X}: {decoded_packet.name}{bcolors.ENDC}")
-            shutter_fall = True
+            decoded_packet = DecodePacket(packet)
 
-        # FSM definition
-        match state:
+            # Look for Shutter Rise packet
+            if decoded_packet.name == 'SHUTTER_RISE' and state != 'SEGMENT':
+                shutter_rise = True
+                shutter_fall = False
+                if args.debug >= 1: print(f"{bcolors.CONTROL}{packet_counter:06} - {decoded_packet.half} 0x{decoded_packet.header:02X}: {decoded_packet.name}{bcolors.ENDC}")
 
-            case 'IDLE':
-                # Look for Frame Start packet
-                if decoded_packet.name == 'FRAME_START' and shutter_rise:
-                    readout_mode = decoded_packet.pc_mode
-                    matrix = np.zeros((256, 448), dtype=np.uint8 if readout_mode == '8bit' else np.uint16)                                  
-                    if args.debug >= 1: print(f"{bcolors.FRAME}{packet_counter:06} - {decoded_packet.half} {decoded_packet.pc_mode} {decoded_packet.name}: Frame {frame_counter}.{bcolors.ENDC}")
-                    state = 'FRAME'
-                    #If we received a shutter fall, this one is the last frame
-                    if shutter_fall == True:
-                        shutter_rise = False
-                # See if a control packet arrived during Idle State
-                elif  args.debug >= 2 and decoded_packet.control == True:
-                    print(f"{bcolors.WARNING}{packet_counter:06} - {decoded_packet.half} CONTROL PACKET 0x{decoded_packet.header:02X}: {decoded_packet.name}{bcolors.ENDC}")
-                
-            case 'FRAME': 
-                # Look for Segment Start packet
-                if decoded_packet.name == 'SEGMENT_START':
-                    # Get the address of started segment
-                    segment_address = decoded_packet.segment
-                    # Start counting data packets read from the next segment
-                    data_counter = 0
-                    if args.debug >= 1: print(f"{packet_counter:06} - {decoded_packet.half} {decoded_packet.pc_mode} {decoded_packet.name} Segment {segment_address}.")
-                    # Change state from 'FRAME' to 'SEGMENT'
-                    state = 'SEGMENT'
+            # Look for a shutter fall package
+            elif decoded_packet.name == 'SHUTTER_FALL' and state != 'SEGMENT':
+                if args.debug >= 1: print(f"{bcolors.CONTROL}{packet_counter:06} - {decoded_packet.half} 0x{decoded_packet.header:02X}: {decoded_packet.name}{bcolors.ENDC}")
+                shutter_fall = True
+
+            # FSM definition
+            match state:
+
+                case 'IDLE':
+                    # Look for Frame Start packet
+                    if decoded_packet.name == 'FRAME_START' and (shutter_rise or args.ignore_shutter):
+                        readout_mode = decoded_packet.pc_mode
+                        matrix = np.zeros((256, 448), dtype=np.uint8 if readout_mode == '8bit' else np.uint16)
+                        if args.debug >= 1: print(f"{bcolors.FRAME}{packet_counter:06} - {decoded_packet.half} {decoded_packet.pc_mode} {decoded_packet.name}: Frame {frame_counter}.{bcolors.ENDC}")
+                        state = 'FRAME'
+                        #If we received a shutter fall, this one is the last frame
+                        if shutter_fall == True:
+                            shutter_rise = False
+                    # See if a control packet arrived during Idle State
+                    elif  args.debug >= 2 and decoded_packet.control == True:
+                        print(f"{bcolors.WARNING}{packet_counter:06} - {decoded_packet.half} CONTROL PACKET 0x{decoded_packet.header:02X}: {decoded_packet.name}{bcolors.ENDC}")
                     
-                # Frame End packet
-                elif decoded_packet.name == 'FRAME_END':
-                    # Print
-                    if args.debug >= 1: print(f"{bcolors.FRAME}{packet_counter:06} - {decoded_packet.half} {decoded_packet.pc_mode} {decoded_packet.name}: Frame {frame_counter}.{bcolors.ENDC}")
-                    # Increment frame counter
-                    frame_counter = frame_counter + 1
-                    # Restart segments counter
-                    segment_counter = [0, 0, 0, 0, 0, 0, 0, 0]
-                    # Add the new matrix to frames array
-                    frames.append(matrix)
-                    # Change state from 'FRAME' to 'IDLE'
-                    state = 'IDLE'
+                case 'FRAME':
+                    # Look for Segment Start packet
+                    if decoded_packet.name == 'SEGMENT_START':
+                        # Get the address of started segment
+                        segment_address = decoded_packet.segment
+                        # Start counting data packets read from the next segment
+                        data_counter = 0
+                        if args.debug >= 1: print(f"{packet_counter:06} - {decoded_packet.half} {decoded_packet.pc_mode} {decoded_packet.name} Segment {segment_address}.")
+                        # Change state from 'FRAME' to 'SEGMENT'
+                        state = 'SEGMENT'
 
-            case 'SEGMENT':
+                    # Frame End packet
+                    elif decoded_packet.name == 'FRAME_END':
+                        # Print
+                        if args.debug >= 1: print(f"{bcolors.FRAME}{packet_counter:06} - {decoded_packet.half} {decoded_packet.pc_mode} {decoded_packet.name}: Frame {frame_counter}.{bcolors.ENDC}")
+                        # Increment frame counter
+                        frame_counter = frame_counter + 1
+                        # Restart segments counter
+                        segment_counter = [0, 0, 0, 0, 0, 0, 0, 0]
+                        # Add the new matrix to frames array
+                        frames.append(matrix)
+                        # Change state from 'FRAME' to 'IDLE'
+                        state = 'IDLE'
+
+                case 'SEGMENT':
+
+                    # Segment End packet
+                    if decoded_packet.name == 'SEGMENT_END':
+
+                        if (data_counter != 1792):
+                            print(f"{bcolors.ERROR}{packet_counter:06} - ERROR: Data packets counter different than 1792: {data_counter} packets received. {decoded_packet.half} Frame {frame_counter} Segment {segment_address} {bcolors.ENDC}")
+
+                        # Get the address of ended segment
+                        segment_address = decoded_packet.segment
+                        # Count how many times each segment has been read in a frame
+                        segment_counter[segment_address] = segment_counter[segment_address] + 1
+                        # Print
+                        if args.debug >= 1: print(f"{packet_counter:06} - {decoded_packet.half} {decoded_packet.pc_mode} {decoded_packet.name} Segment {segment_address}.")
+
+                        # Change state from 'SEGMENT' to 'FRAME'
+                        state = 'FRAME'
                     
-                # Segment End packet
-                if decoded_packet.name == 'SEGMENT_END':
+                    # Data packet
+                    elif data_counter < 1792:
 
-                    if (data_counter != 1792):
-                        print(f"{bcolors.ERROR}{packet_counter:06} - ERROR: Data packets counter different than 1792: {data_counter} packets received. {decoded_packet.half} Frame {frame_counter} Segment {segment_address} {bcolors.ENDC}")
-
-                    # Get the address of ended segment
-                    segment_address = decoded_packet.segment
-                    # Count how many times each segment has been read in a frame
-                    segment_counter[segment_address] = segment_counter[segment_address] + 1
-                    # Print
-                    if args.debug >= 1: print(f"{packet_counter:06} - {decoded_packet.half} {decoded_packet.pc_mode} {decoded_packet.name} Segment {segment_address}.")
-
-                    # Change state from 'SEGMENT' to 'FRAME'
-                    state = 'FRAME'
-                
-                # Data packet                
-                else:
-                    #Possible Control Packet During Data
-                    if args.debug >= 2 and decoded_packet.control == True:
-                        print(f"{bcolors.DEBUG}{packet_counter:06} - {decoded_packet.half} Possible CONTROL PACKET - 0x{decoded_packet.header:02X}: {decoded_packet.name}{bcolors.ENDC}")
-                
-                    if data_counter < 1792:
                         # Calculate x coordinate of data packet
                         if (segment_address < 4): 
                             # Left side of matrix
@@ -259,7 +272,7 @@ for file in filenames:
 
 # Concatenate botton and top matrixes to construct full images
 images = []
-for i in range(len(frames)):
+for i in range(min(len(matrixes[0]),len(matrixes[1]))):
     images.append(np.concatenate((matrixes[1][i], np.rot90(matrixes[0][i], 2)), axis = 0))
 
 if args.save_file == True:
