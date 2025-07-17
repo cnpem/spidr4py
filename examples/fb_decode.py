@@ -268,7 +268,7 @@ for file in filenames:
     matrixes.append(frames)
 
     iter_time = (time.time() - loop_time)*1000
-    print(f'Decode time {iter_time:.3f} ms. Time per frame: {iter_time/frame_counter:.3f} ms')
+    print(f'Decode time {iter_time:.3f} ms. Total frames {frame_counter}. Time per frame: {iter_time/frame_counter:.3f} ms')
 
 # Concatenate botton and top matrixes to construct full images
 images = []
