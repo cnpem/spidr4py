@@ -227,15 +227,32 @@ with helpers.cl_connect() as channel:
 
     # Configure frame-based readout
     # ------------------------------------------------------------------------------------------------------
-    readoutCfg = rpc.Tpx4ReadoutConfig(
-        idx=helpers.cl_chip_idx(),
-        mode=rpc.TPX4_READOUT_FRAME8 if ns.counter == '8bit' else rpc.TPX4_READOUT_FRAME16,
-        pc24b_thr=100
+    tpx4.ReadoutSetConfig(
+        rpc.Tpx4ReadoutConfig(
+            idx=helpers.cl_chip_idx(),
+            mode=rpc.TPX4_READOUT_FRAME8 if ns.counter == '8bit' else rpc.TPX4_READOUT_FRAME16,
+            toa_enable=False,
+            analog_frontend_mode=rpc.TPX4_AFEM_HIGH_GAIN_ELECTRON_COLLECTION,   #See https://spidr4.nikhef.nl/docs/html/reference/grpc.html?highlight=tpx4readoutconfig#tpx4analogfrontendmode
+        )
     )
-    tpx4.ReadoutSetConfig(readoutCfg)
 
-    start_frame_enable(en = False, top = True)
-    start_frame_enable(en = False, top = False)
+    # Configure status monitor configuration
+    # ------------------------------------------------------------------------------------------------------
+    tpx4.StatusMonSetConfig(
+        rpc.Tpx4StatusMonConfig(
+            idx=helpers.cl_chip_idx(),
+            enable=True,                                #Enable status and monitoring packet generation (output status packets in the data stream)
+            heartbeat=False,                            #Enable the heartbeat (periodical status packets)
+            heartbeat_shift=0,                          #Heartbeat shift. A heartbeat is send every (1 << heatbeat_shift) * 25 ns.
+            global_time_reset=False,                    #Resets the global time on T0-sync
+            global_time=False,                          #Enable the glboal time counter in status packets (48bit)
+            ctrl_data_test=False,                       #Enable sending constant data-test packets
+            signal_select=rpc.TPX4_SIGNAL_SELECT_NONE,  #TPX4_SIGNAL_SELECT_NONE or TPX4_SIGNAL_SELECT_CRW_NEXT_FRAME
+        )
+    )
+
+    #start_frame_enable(en = False, top = True)
+    #start_frame_enable(en = False, top = False)
 
     # Configure shutter
     # ------------------------------------------------------------------------------------------------------
@@ -249,7 +266,7 @@ with helpers.cl_connect() as channel:
         )
     )
 
-    # Configure the output
+    # Configure the output links and optimize PLLs
     # ------------------------------------------------------------------------------------------------------
 
     link_top = get_link_bw(top = True,check_PLL=True,optimize_PLL=True)
@@ -265,9 +282,9 @@ with helpers.cl_connect() as channel:
     counter_depth = 8 if ns.counter == '8bit' else 16
     readout_time_frame_us = 256*448*counter_depth/(LinkSpeed_Mbps*Nlinks)
     crw_regs_val = int((ns.crw_time_us - readout_time_frame_us)*clk_datapath_MHz)
-    if crw_regs_val < 0:
-        print(f'ERROR: crw wait time to short for {LinkSpeed_Mbps} Mbps link speed. Setting to 0 cycles. {crw_regs_val} cannot be negative')
-        crw_regs_val = 0
+    if crw_regs_val <= 0:
+        print(f'ERROR: crw wait time to short for {LinkSpeed_Mbps} Mbps link speed. Setting to 1 cycle. {crw_regs_val} cannot be 0 or negative')
+        crw_regs_val = 1
     print(f'Readout time per frame: {readout_time_frame_us} us. crw_wait_time register value: {crw_regs_val}')
 
     crw_regs = {
@@ -324,31 +341,6 @@ with helpers.cl_connect() as channel:
         )
         print(f'Register {reg:20} 0x{registers[reg]:02X}: 0b{int.from_bytes(ans.data):016b}')
     
-    #Enable Control packets, like shutter to ensure image sync at post-processing
-    registers_to_write = {
-        'STATUS_MON_TOP': [0xCC02,0b0000000000000111],
-        'STATUS_MON_BOT': [0x4C02,0b0000000000000111],
-        'PPROC_TOP':[0xCC03,0b0100000000000000],
-        'PPROC_BOT':[0x4C03,0b0100000000000000],
-        }
-
-    for reg in registers_to_write.keys():
-
-        tpx4.WriteReg(
-            rpc.WriteRegRequest(
-                idx=0,
-                addr=registers_to_write[reg][0],
-                data=int(registers_to_write[reg][1]).to_bytes(2)
-            )
-        )
-        ans = tpx4.ReadReg(
-            rpc.ReadRegRequest(
-                idx=0,
-                addr=registers_to_write[reg][0],
-            )
-        )
-        print(f'Register {reg:20} 0x{registers_to_write[reg][0]:02X}: 0b{int.from_bytes(ans.data):016b}')
-
     start_frame_enable(en = True, top = True)
     start_frame_enable(en = True, top = False)
 
@@ -357,5 +349,5 @@ with helpers.cl_connect() as channel:
 
     time.sleep(ns.exposure_time_us/1e6)
 
-    start_frame_enable(en = False, top = True)
-    start_frame_enable(en = False, top = False)
+    #start_frame_enable(en = False, top = True)
+    #start_frame_enable(en = False, top = False)
