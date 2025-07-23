@@ -62,9 +62,9 @@ def get_link_bw(top = True, check_PLL = False, optimize_PLL = False):
 
     speed_div_log_2 = int.from_bytes(ans.data) & 0b1111
 
-    if check_PLL: check_optimal_PLL(top = top)
+    if check_PLL: check_optimal_PLL(top = top, en_print=True)
 
-    if optimize_PLL:
+    if optimize_PLL and not(check_optimal_PLL(top=top)):
         print('Optimizing PLL setting')
         ans = tpx4.WriteReg(
             rpc.WriteRegRequest(
@@ -74,11 +74,10 @@ def get_link_bw(top = True, check_PLL = False, optimize_PLL = False):
                 data= (0b1110<<27 | 0b111<<24 | 0b1111<<20 | 0b0000<<16 | 0b1111<<12    | 0b0011<<8     | 0x00).to_bytes(4)
             )
         )
-        check_optimal_PLL(top = top)
 
     return 5120*(2**(high_bw_en))/(2**(speed_div_log_2))
 
-def check_optimal_PLL(top = True):
+def check_optimal_PLL(top = True,en_print=False):
     if check_optimal_PLL:
         #get GWT_CONF_PLL register
         ans = tpx4.ReadReg(
@@ -97,10 +96,13 @@ def check_optimal_PLL(top = True):
         cap_large_PLL = (reg_data>>8)&0xF
         rst_vcntr_vdd_PLL = (reg_data)&0xFF
 
-        print(f'res_PLL={res_PLL:04b}\t icp_PLL={icp_PLL:03b}\t adj_cp_PLL={adj_cp_PLL:04b}\t adj_vco_PLL={adj_vco_PLL:04b}\t cap_small_PLL={cap_small_PLL:04b}\t cap_large_PLL={cap_large_PLL:04b}\t rst_vcntr_vdd_PLL={rst_vcntr_vdd_PLL:08b}')
+        if en_print: print(f'res_PLL={res_PLL:04b}\t icp_PLL={icp_PLL:03b}\t adj_cp_PLL={adj_cp_PLL:04b}\t adj_vco_PLL={adj_vco_PLL:04b}\t cap_small_PLL={cap_small_PLL:04b}\t cap_large_PLL={cap_large_PLL:04b}\t rst_vcntr_vdd_PLL={rst_vcntr_vdd_PLL:08b}')
 
         if icp_PLL != 7 or adj_cp_PLL != 0xF or cap_small_PLL != 0xF:
             print('WARNING: PLL not optimized. See https://timepix4.web.cern.ch/timepix4/timepix4/ChipOperation/configuration_output_links.html')
+            return False
+        else:
+            return True
 
 def start_frame_enable(en = True, top = True):
     if top:
@@ -269,8 +271,8 @@ with helpers.cl_connect() as channel:
     # Configure the output links and optimize PLLs
     # ------------------------------------------------------------------------------------------------------
 
-    link_top = get_link_bw(top = True,check_PLL=True,optimize_PLL=True)
-    link_bot = get_link_bw(top = False,check_PLL=True,optimize_PLL=True)
+    link_top = get_link_bw(top = True,check_PLL=False,optimize_PLL=True)
+    link_bot = get_link_bw(top = False,check_PLL=False,optimize_PLL=True)
 
     print(f'Link speed TOP: {link_top} Mbps')
     print(f'Link speed BOT: {link_bot} Mbps')
