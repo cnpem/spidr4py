@@ -153,19 +153,22 @@ with helpers.cl_connect() as channel:
     datastream = rpc.DataStreamStub(channel)
     trigger = rpc.TriggerStub(channel)
 
+    trigger.Enable(rpc.EMPTY)                       # Enable the trigger logic block
+    trigger.StopAutoShutter(rpc.EMPTY)              # Just in case it was still running
     # Configure Trigger
     # ------------------------------------------------------------------------------------------------------
     trigger.SetConfig(
         rpc.TriggerConfig(
-            shutter_input=rpc.SHUTTER_IN_SOFTWARE,
+            shutter_input=rpc.SHUTTER_IN_AUTO_GEN,
             t0_input=rpc.T0SYNC_IN_SOFTWARE,
             #Works only with SHUTTER_IN_AUTO_GEN or SHUTTER_IN_AUTO_GEN_EXT_START
-            #auto_shutter_open_us=10,
-            #auto_shutter_close_us=10,
-            #shutter_count=1,
+            auto_shutter_open_us=ns.exposure_time_us,
+            auto_shutter_close_us=10,
+            shutter_count=1,
             ####################################################################################
         )
     )
+    trigger.ResetShutterCounter(rpc.EMPTY)          # Reset shutter counter
 
     # Reset the pixel chips (will also load the default configuration)
     # ------------------------------------------------------------------------------------------------------
@@ -251,16 +254,13 @@ with helpers.cl_connect() as channel:
         )
     )
 
-    #start_frame_enable(en = False, top = True)
-    #start_frame_enable(en = False, top = False)
-
     # Configure shutter
     # ------------------------------------------------------------------------------------------------------
     tpx4.ShutterSetConfig(
         rpc.Tpx4ShutterConfig(
             idx=helpers.cl_chip_idx(),
-            mode=rpc.TPX4_SHUTTER_MODE_PROG_SINGLE,
-            input=rpc.TPX4_SHUTTER_INPUT_SLOW_CONTROL,
+            mode=rpc.TPX4_SHUTTER_MODE_MANUAL,  #change to TPX4_SHUTTER_MODE_PROG_SINGLE for internal controlled shutter,
+            input=rpc.TPX4_SHUTTER_INPUT_PAD,   #change to TPX4_SHUTTER_INPUT_SLOW_CONTROL to trigger internal shutter using SC
             prog_open_us=ns.exposure_time_us,
             prog_close_us=1,
         )
@@ -341,13 +341,28 @@ with helpers.cl_connect() as channel:
         )
         print(f'Register {reg:20} 0x{registers[reg]:02X}: 0b{int.from_bytes(ans.data):016b}')
     
-    start_frame_enable(en = True, top = True)
-    start_frame_enable(en = True, top = False)
+    ############################################################################################
+    # We're not disabling start_frame_enable to workaround 16bit bug: https://timepix4.web.cern.ch/timepix4/timepix4/ChipOperation/bugs_knowissues_and_faq.html#bit-mode-start
+    ############################################################################################
+    # Enable start_frame
+    #start_frame_enable(en = True, top = True)
+    #start_frame_enable(en = True, top = False)
+    ############################################################################################
+    #Send T0Sync if a reset has been performed
 
-    tpx4.ShutterOpen(rpc.ChipIndex(idx=helpers.cl_chip_idx()))
-    tpx4.T0Sync(rpc.ChipIndex(idx=helpers.cl_chip_idx()))
+    if ns.reset: tpx4.T0Sync(rpc.ChipIndex(idx=helpers.cl_chip_idx()))
 
-    time.sleep(ns.exposure_time_us/1e6)
+    print('Opening shutter')
+    trigger.StartAutoShutter(rpc.EMPTY)             # Start auto-shutter
 
+    status = trigger.GetStatus(rpc.EMPTY)           # Wait until it is done
+    while status.auto_shutter_busy:
+        time.sleep(0.1)
+        status = trigger.GetStatus(rpc.EMPTY)       # Get the current status
+        print(f"Shutter count: {status.shutter_counter}")
+
+    ############################################################################################
+    # Disable start_frame and stop readout
     #start_frame_enable(en = False, top = True)
     #start_frame_enable(en = False, top = False)
+    ############################################################################################
