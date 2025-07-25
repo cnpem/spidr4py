@@ -191,28 +191,23 @@ with helpers.cl_connect() as channel:
     # Configure Pixel Matrix - load equalization and mask bits
     # ------------------------------------------------------------------------------------------------------
     if ns.equalize == True:
-        eq_file = 'eq_mask_fb.dat'
-        mask_file = 'eq_codes_fb.dat'
+        mask_file = 'eq_mask_fb.dat'
+        eq_file = 'eq_codes_fb.dat'
         if os.path.isdir(ns.equalization_path) and os.path.isfile(os.path.join(ns.equalization_path,eq_file)) and os.path.isfile(os.path.join(ns.equalization_path,mask_file)):
 
             print(f'Loading equalization')
-            pixel_cfg = tpx4tools.PixelConfig(dac=31, power_enable=False, tp_enable=False, mask=True).word
-            pixel_cfg_mtx = np.full((512, 448), pixel_cfg, dtype=np.uint8)
+            pixel_cfg_mtx = np.zeros((512, 448), dtype=np.uint8)
 
             #loads equalization and mask bits from file
-
-            mask=np.loadtxt(os.path.join(ns.equalization_path,eq_file), dtype=np.bool)
-            equal=np.loadtxt(os.path.join(ns.equalization_path,mask_file), dtype=int)
-
-            #create an empty array for pixel config
-            pixelConfig = np.zeros(shape=(2,224,16,32), dtype=np.uint8)
+            mask=np.loadtxt(os.path.join(ns.equalization_path,mask_file), dtype=np.bool)
+            equal=np.loadtxt(os.path.join(ns.equalization_path,eq_file), dtype=int)
 
             #configure pixels and calculate number of masked ones
             num_mask_pixels=0
             for X in range(0,448,1):
                 for Y in range(0,512,1):
-                    #print(f'Pixel X:{X:03d} Y:{Y:03d} Equal: {equal[X][Y]:02d} Mask: {mask[X][Y]}')
                     pixel_cfg_mtx[Y][X] = tpx4tools.PixelConfig(dac=equal[X][Y], power_enable=not(mask[X][Y]), tp_enable=False, mask=mask[X][Y]).word
+                    #print(f'Pixel X:{X:03d} Y:{Y:03d} Equal: 0x{equal[X][Y]:02X} or {equal[X][Y]:02d} Mask: {mask[X][Y]}. Pixel cfg: 0x{pixel_cfg_mtx[Y][X]:02X} or {pixel_cfg_mtx[Y][X]:02d}')
                     if mask[X][Y]:
                         num_mask_pixels+=1
             print(f'Num masked pixels: {num_mask_pixels}')
