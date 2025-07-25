@@ -25,20 +25,26 @@ from spidr4 import rpc, tpx4tools, utils, stream
 import helpers
 from argparse import BooleanOptionalAction
 
+sys.path.insert(0, os.path.join(os.getcwd(),'..','common'))
+sys.path.insert(0, os.path.join(os.getcwd(),'..'))
+
+from common import dacs
+
 PACKET_READ_BOTTOM= 0x4204
 PACKET_READ_TOP= 0xC204
-
-counter_options = ['8bit','16bit']
 
 ns = helpers.cl_parse(with_chip_idx=True, args={
     "iface": dict(help="Network interface", type=str),
     "--xgbe-port": dict(help="10 GbE port", type=int, default=8192),
     "--exposure-time-us": dict(type=int,default=10,help='Exposure time (shutter time) in microseconds'),
     "--crw-time-us": dict(type=int,default=1000,help='Continuous read-write time in microseconds'),
-    '--counter': dict(choices=counter_options,default='8bit',help='Frame based counter depth'),
+    '--counter': dict(choices=['8bit','16bit'],default='8bit',help='Frame based counter depth'),
     '--reset': dict(action=BooleanOptionalAction,default=True,help='reset Timepix4 ASIC at the beginning'),
     '--equalize':dict(action=BooleanOptionalAction,default=True,help='load equalization'),
-    '--equalization-path':dict(type=str,default='equalization',help='path to input and output file')
+    '--equalization-path':dict(type=str,default='equalization',help='path to input and output file'),
+    '--th_e':dict(type=int,help='Threshold in e-'),
+    '--polarity': dict(choices=['h','e'],default='e',help='Charge collection'),
+    '--gain': dict(choices=['low','high'],default='high',help='CSA gain'),
 })
 
 def get_link_bw(top = True, check_PLL = False, optimize_PLL = False):
@@ -99,7 +105,7 @@ def check_optimal_PLL(top = True,en_print=False):
         if en_print: print(f'res_PLL={res_PLL:04b}\t icp_PLL={icp_PLL:03b}\t adj_cp_PLL={adj_cp_PLL:04b}\t adj_vco_PLL={adj_vco_PLL:04b}\t cap_small_PLL={cap_small_PLL:04b}\t cap_large_PLL={cap_large_PLL:04b}\t rst_vcntr_vdd_PLL={rst_vcntr_vdd_PLL:08b}')
 
         if icp_PLL != 7 or adj_cp_PLL != 0xF or cap_small_PLL != 0xF:
-            print('WARNING: PLL not optimized. See https://timepix4.web.cern.ch/timepix4/timepix4/ChipOperation/configuration_output_links.html')
+            print(f'WARNING: {'Top' if top else 'Bottom'} PLL not optimized. See https://timepix4.web.cern.ch/timepix4/timepix4/ChipOperation/configuration_output_links.html')
             return False
         else:
             return True
@@ -178,6 +184,10 @@ with helpers.cl_connect() as channel:
         print('Resetting the pixel chips (load default config)')
         ctrl.ResetPixelChips(rpc.EMPTY)
 
+    #Configure DACs
+    # ------------------------------------------------------------------------------------------------------
+    dacs = dacs.DACs(tpx4,helpers.cl_chip_idx(),adc_half='TOP',adc='internal',debug=True)
+
     # Configure Pixel Matrix - load equalization and mask bits
     # ------------------------------------------------------------------------------------------------------
     if ns.equalize == True:
@@ -232,14 +242,31 @@ with helpers.cl_connect() as channel:
 
     # Configure frame-based readout
     # ------------------------------------------------------------------------------------------------------
+    #See https://spidr4.nikhef.nl/docs/html/reference/grpc.html?highlight=tpx4readoutconfig#tpx4analogfrontendmode
+    match (ns.gain.lower(),ns.polarity.lower()):
+        case (g,p) if g == 'high' and p == 'e':
+            afe_mode = rpc.TPX4_AFEM_HIGH_GAIN_ELECTRON_COLLECTION
+        case (g,p) if g == 'high' and p == 'h':
+            afe_mode = rpc.TPX4_AFEM_HIGH_GAIN_HOLE_COLLECTION
+        case (g,p) if g == 'low' and p == 'e':
+            afe_mode = rpc.TPX4_AFEM_LOW_GAIN_ELECTRON_COLLECTION
+        case (g,p) if g == 'low' and p == 'h':
+            afe_mode = rpc.TPX4_AFEM_LOW_GAIN_HOLE_COLLECTION
+        case _:
+            print(f'Error. Not supported gain {ns.gain}.')
+            raise SystemError
+
     tpx4.ReadoutSetConfig(
         rpc.Tpx4ReadoutConfig(
             idx=helpers.cl_chip_idx(),
             mode=rpc.TPX4_READOUT_FRAME8 if ns.counter == '8bit' else rpc.TPX4_READOUT_FRAME16,
             toa_enable=False,
-            analog_frontend_mode=rpc.TPX4_AFEM_HIGH_GAIN_ELECTRON_COLLECTION,   #See https://spidr4.nikhef.nl/docs/html/reference/grpc.html?highlight=tpx4readoutconfig#tpx4analogfrontendmode
+            analog_frontend_mode=afe_mode,
         )
     )
+
+    # Configure threshold in e. Polarity = 0 means electrons collection
+    dacs.conf_threshold(LOW_GAIN=ns.gain.lower()=='low',POLARITY=ns.polarity.lower()=='h',THR_e=ns.th_e,debug=True)
 
     # Configure status monitor configuration
     # ------------------------------------------------------------------------------------------------------
@@ -342,7 +369,7 @@ with helpers.cl_connect() as channel:
             )
         )
         print(f'Register {reg:20} 0x{registers[reg]:02X}: 0b{int.from_bytes(ans.data):016b}')
-    
+
     ############################################################################################
     # We're not disabling start_frame_enable to workaround 16bit bug: https://timepix4.web.cern.ch/timepix4/timepix4/ChipOperation/bugs_knowissues_and_faq.html#bit-mode-start
     ############################################################################################
@@ -350,7 +377,7 @@ with helpers.cl_connect() as channel:
     #start_frame_enable(en = True, top = True)
     #start_frame_enable(en = True, top = False)
     ############################################################################################
-    #Send T0Sync if a reset has been performed
+    #Send T0Sync if a reset has been performed to start readout
 
     if ns.reset: tpx4.T0Sync(rpc.ChipIndex(idx=helpers.cl_chip_idx()))
 
