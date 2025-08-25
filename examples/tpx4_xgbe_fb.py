@@ -33,8 +33,15 @@ from common import dacs
 PACKET_READ_BOTTOM= 0x4204
 PACKET_READ_TOP= 0xC204
 
+counter_options = ['8bit','16bit']
+available_link_speed = [40,80,160,320,640,1280,2560,5120,10240]
+
 ns = helpers.cl_parse(with_chip_idx=True, args={
-    "iface": dict(help="Network interface", type=str),
+    "iface": dict(help="Network interface", type=str, nargs='?'),
+    "--ffly-mode": dict(help="Use firefly links instead of the 10 GbE port", action=BooleanOptionalAction,default=False),
+    '--channels-top': dict(type=lambda x: int(x,0),default=0xFF,choices=range(0,256),metavar='[0x00-0xFF]',help='Choose TOP channels to be enabled as hex 8bit'),
+    '--channels-bot': dict(type=lambda x: int(x,0),default=0xFF,choices=range(0,256),metavar='[0x00-0xFF]',help='Choose BOTTOM channels to be enabled as hex 8bit'),
+    '--link-speed-mbps': dict(type=int,choices=available_link_speed,default=2560,help='Link Speed in MHz'),
     "--xgbe-port": dict(help="10 GbE port", type=int, default=8192),
     "--exposure-time-us": dict(type=int,default=10,help='Exposure time (shutter time) in microseconds'),
     "--crw-time-us": dict(type=int,default=1000,help='Continuous read-write time in microseconds'),
@@ -46,6 +53,13 @@ ns = helpers.cl_parse(with_chip_idx=True, args={
     '--polarity': dict(choices=['h','e'],default='e',help='Charge collection'),
     '--gain': dict(choices=['low','high'],default='high',help='CSA gain'),
 })
+
+if ns.iface == None and ns.ffly_mode == False:
+    print("If not using --ffly-mode, the xgbe network interface name is required", file=sys.stderr)
+    sys.exit(1)
+elif ns.iface != None and ns.ffly_mode == True:
+    print("Network interface should not be set when using --ffly-mode", file=sys.stderr)
+    sys.exit(1)
 
 def get_link_bw(top = True, check_PLL = False, optimize_PLL = False):
 
@@ -136,21 +150,21 @@ def start_frame_enable(en = True, top = True):
         )
     )
 
-iface2find = ns.iface
-xgbe_port = ns.xgbe_port
+if ns.ffly_mode == False:
+    iface2find = ns.iface
+    xgbe_port = ns.xgbe_port
 
-# Find network interface information
-# -----------------------------------------------------------------------------------------------------------
-# Get network card MAC address and IP address
-xgbe_host_mac, xgbe_host_ip = utils.get_nic_info(iface2find)
+    # Find network interface information
+    # Get network card MAC address and IP address
+    xgbe_host_mac, xgbe_host_ip = utils.get_nic_info(iface2find)
 
-# make-up an 10gbe IP for the spidr4 module, as long as it is not the same as xgbe_host_ip
-xgbe_spidr_ip = utils.inc_ip(xgbe_host_ip)
+    # make-up an 10gbe IP for the spidr4 module, as long as it is not the same as xgbe_host_ip
+    xgbe_spidr_ip = utils.inc_ip(xgbe_host_ip)
+    print(f'Xgbe TOP port: {xgbe_port}')
+    print(f'Xgbe BOT port: {xgbe_port+1}')
+    print(f'Spidr4 IP: {xgbe_spidr_ip}')
+    print(f'Host IP: {xgbe_host_ip}')
 
-print(f'Spidr4 IP: {xgbe_spidr_ip}')
-print(f'Xgbe TOP port: {xgbe_port}')
-print(f'Xgbe BOT port: {xgbe_port+1}')
-print(f'Host IP: {xgbe_host_ip}')
 
 # Main loop, create network connection
 with helpers.cl_connect() as channel:
@@ -225,15 +239,24 @@ with helpers.cl_connect() as channel:
 
     # Configure the output
     # ------------------------------------------------------------------------------------------------------
-    datastream.ConfigXGbe(rpc.XGbeConfig(
-        idx=0,
-        primary=rpc.XGbeLinkConfig(
-            source_ip=xgbe_spidr_ip,
-            dest_ip=xgbe_host_ip,
-            dest_mac=xgbe_host_mac,
-            port=xgbe_port
-        )
-    ))
+    if ns.ffly_mode:
+        # Use optical links (FireFly) to stream raw Timepix4 data
+        datastream.ConfigOptical(rpc.OpticalLinkConfig(
+                idx=helpers.cl_chip_idx(),
+                channels=(ns.channels_top << 8) | ns.channels_bot,
+                link_speed=ns.link_speed_mbps
+        ))
+    else:
+        # Use the 10 Gbps ethernet inteface to stream Timepix4 data
+        datastream.ConfigXGbe(rpc.XGbeConfig(
+            idx=0,
+            primary=rpc.XGbeLinkConfig(
+                source_ip=xgbe_spidr_ip,
+                dest_ip=xgbe_host_ip,
+                dest_mac=xgbe_host_mac,
+                port=xgbe_port
+            )
+        ))
 
     # Configure frame-based readout
     # ------------------------------------------------------------------------------------------------------
@@ -300,7 +323,12 @@ with helpers.cl_connect() as channel:
     print(f'Link speed BOT: {link_bot} Mbps')
 
     #Calculate crw registers needed value:
-    Nlinks = 1                                    #default for spidr4 readout 10Gbps mode
+    if ns.ffly_mode:
+        # Get the maximum number of active optical links
+        Nlinks = max(bin(ns.channels_top).count('1'), bin(ns.channels_bot).count('1'))
+    else:
+        # When using the 10 Gbps ethernet interface, only one link per top/bottom is active
+        Nlinks = 1
     LinkSpeed_Mbps = get_link_bw(top = True)      #default for spidr4 readout 10Gbps mode
     clk_datapath_MHz = 160                        #clk_datapath default config
     counter_depth = 8 if ns.counter == '8bit' else 16
