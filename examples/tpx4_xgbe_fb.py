@@ -37,7 +37,7 @@ counter_options = ['8bit','16bit']
 available_link_speed = [40,80,160,320,640,1280,2560,5120,10240]
 
 ns = helpers.cl_parse(with_chip_idx=True, args={
-    "iface": dict(help="Network interface", type=str, nargs='?'),
+    "iface": dict(help="Network interface for Spidr4 10G link", type=str, nargs='?'),
     "--ffly-mode": dict(help="Use firefly links instead of the 10 GbE port", action=BooleanOptionalAction,default=False),
     '--channels-top': dict(type=lambda x: int(x,0),default=0xFF,choices=range(0,256),metavar='[0x00-0xFF]',help='Choose TOP channels to be enabled as hex 8bit'),
     '--channels-bot': dict(type=lambda x: int(x,0),default=0xFF,choices=range(0,256),metavar='[0x00-0xFF]',help='Choose BOTTOM channels to be enabled as hex 8bit'),
@@ -48,8 +48,9 @@ ns = helpers.cl_parse(with_chip_idx=True, args={
     '--counter': dict(choices=['8bit','16bit'],default='8bit',help='Frame based counter depth'),
     '--reset': dict(action=BooleanOptionalAction,default=True,help='reset Timepix4 ASIC at the beginning'),
     '--equalize':dict(action=BooleanOptionalAction,default=True,help='load equalization'),
+    '--status-packets':dict(action=BooleanOptionalAction,default=True,help='Enables sending output status packets in the data stream (for example, Shutter Rise/Fall)'),
     '--equalization-path':dict(type=str,default='equalization',help='path to input and output file'),
-    '--th_e':dict(type=int,help='Threshold in e-'),
+    '--th_e':dict(type=int,default=0,help='Threshold in e-'),
     '--polarity': dict(choices=['h','e'],default='e',help='Charge collection'),
     '--gain': dict(choices=['low','high'],default='high',help='CSA gain'),
 })
@@ -293,7 +294,7 @@ with helpers.cl_connect() as channel:
     tpx4.StatusMonSetConfig(
         rpc.Tpx4StatusMonConfig(
             idx=helpers.cl_chip_idx(),
-            enable=True,                                #Enable status and monitoring packet generation (output status packets in the data stream)
+            enable=ns.status_packets,                   #Enable status and monitoring packet generation (output status packets in the data stream)
             heartbeat=False,                            #Enable the heartbeat (periodical status packets)
             heartbeat_shift=0,                          #Heartbeat shift. A heartbeat is send every (1 << heatbeat_shift) * 25 ns.
             global_time_reset=False,                    #Resets the global time on T0-sync
