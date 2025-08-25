@@ -197,6 +197,8 @@ with helpers.cl_connect() as channel:
     if ns.reset:
         print('Resetting the pixel chips (load default config)')
         ctrl.ResetPixelChips(rpc.EMPTY)
+        #Reset the pixel matrix
+        tpx4.PixelMatrixReset(rpc.ChipIndex(idx=helpers.cl_chip_idx()))
 
     #Configure DACs
     # ------------------------------------------------------------------------------------------------------
