@@ -39,7 +39,7 @@ parser.add_argument('--path',type=dir_path,required=True,help='path to input and
 parser.add_argument('--save-file',action=argparse.BooleanOptionalAction,default=True,help='save hdf5 output file')
 parser.add_argument('--ignore-shutter',action=argparse.BooleanOptionalAction,default=False,help='do not search for shutter rise/fall and decode all frames')
 parser.add_argument('--filename',type=str,default='fb_decode',help='test name to be appended to output filename')
-parser.add_argument('--debug',type=int,choices=range(3),default=1,help='Print debug level. 0: no print, 1: standard, 2: verbose')
+parser.add_argument('--debug',type=int,choices=range(4),default=1,help='Print debug level. 0: no print, 1: standard, 2: verbose, 3: all messages')
 
 args = parser.parse_args()
 
@@ -148,14 +148,14 @@ for file in filenames:
             spidr_valid_frame = True
             spidr_frame_counter = 0
             spidr_content_size = packet & 0xFFFFFFFF
-            if args.debug >= 1: print(f'{bcolors.SDAQ}{packet_counter:06} - Spidr4 frame header packet: 0x{packet:016X}. Content size: {spidr_content_size} packets{bcolors.ENDC}')
+            if args.debug >= 2: print(f'{bcolors.SDAQ}{packet_counter:06} - Spidr4 frame header packet: 0x{packet:016X}. Content size: {spidr_content_size} packets{bcolors.ENDC}')
 
         elif spidr_valid_frame == True:
             #Increment spidr frame counter and check if the current packet is the spidr frame end
             spidr_frame_counter+=1
             if spidr_frame_counter == spidr_content_size:
                 spidr_valid_frame = False
-                if args.debug >= 1: print(f'{bcolors.SDAQ}{packet_counter:06} - Spidr4 last frame packet. Counter {spidr_frame_counter}. Content size: {spidr_content_size} packets{bcolors.ENDC}')
+                if args.debug >= 2: print(f'{bcolors.SDAQ}{packet_counter:06} - Spidr4 last frame packet. Counter {spidr_frame_counter}. Content size: {spidr_content_size} packets{bcolors.ENDC}')
 
             decoded_packet = DecodePacket(packet)
 
@@ -194,7 +194,7 @@ for file in filenames:
                         segment_address = decoded_packet.segment
                         # Start counting data packets read from the next segment
                         data_counter = 0
-                        if args.debug >= 1: print(f"{packet_counter:06} - {decoded_packet.half} {decoded_packet.pc_mode} {decoded_packet.name} Segment {segment_address}.")
+                        if args.debug >= 3: print(f"{packet_counter:06} - {decoded_packet.half} {decoded_packet.pc_mode} {decoded_packet.name} Segment {segment_address}.")
                         # Change state from 'FRAME' to 'SEGMENT'
                         state = 'SEGMENT'
 
@@ -224,7 +224,7 @@ for file in filenames:
                         # Count how many times each segment has been read in a frame
                         segment_counter[segment_address] = segment_counter[segment_address] + 1
                         # Print
-                        if args.debug >= 1: print(f"{packet_counter:06} - {decoded_packet.half} {decoded_packet.pc_mode} {decoded_packet.name} Segment {segment_address}.")
+                        if args.debug >= 3: print(f"{packet_counter:06} - {decoded_packet.half} {decoded_packet.pc_mode} {decoded_packet.name} Segment {segment_address}.")
 
                         # Change state from 'SEGMENT' to 'FRAME'
                         state = 'FRAME'
