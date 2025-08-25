@@ -2,9 +2,9 @@
 
 #############################################################################################################
 #
-#  tpx4_xgbe_fb.py
+#  tpx4_fb_fast.py
 #  
-#  Performs a frame-based acquisition using 10G interface
+#  Performs frame-based acquisitions using 10G interface or Optical Fast Linkes (Firefly)
 #
 #  Authors: 
 #   Mauricio Donatti <mauricio.donatti@lnls.br>
