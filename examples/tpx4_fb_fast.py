@@ -49,6 +49,7 @@ ns = helpers.cl_parse(with_chip_idx=True, args={
     '--reset': dict(action=BooleanOptionalAction,default=True,help='reset Timepix4 ASIC at the beginning'),
     '--equalize':dict(action=BooleanOptionalAction,default=True,help='load equalization'),
     '--status-packets':dict(action=BooleanOptionalAction,default=True,help='Enables sending output status packets in the data stream (for example, Shutter Rise/Fall)'),
+    '--force-T0sync':dict(action=BooleanOptionalAction,default=False,help='Force to send T0Sync, even without reset'),
     '--equalization-path':dict(type=str,default='equalization',help='path to input and output file'),
     '--th_e':dict(type=int,default=0,help='Threshold in e-'),
     '--polarity': dict(choices=['h','e'],default='e',help='Charge collection'),
@@ -405,7 +406,8 @@ with helpers.cl_connect() as channel:
     ############################################################################################
     #Send T0Sync if a reset has been performed to start readout
 
-    if ns.reset: tpx4.T0Sync(rpc.ChipIndex(idx=helpers.cl_chip_idx()))
+    if ns.reset or ns.force_T0sync:
+        tpx4.T0Sync(rpc.ChipIndex(idx=helpers.cl_chip_idx()))
 
     print('Opening shutter')
     trigger.StartAutoShutter(rpc.EMPTY)             # Start auto-shutter
