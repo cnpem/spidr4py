@@ -142,9 +142,9 @@ for file in filenames:
     # Analyze each packet in the file
     for packet_counter,packet in enumerate(packets):
 
-        #Filter spidr4 headers and control packets
+        #Filter spidr4 headers to consider only 'Pixel Data' groups
         #See https://spidr4.nikhef.nl/docs/html/software/dataformat.html
-        if spidr_valid_frame == False and (packet & 0xFFFF000000000000) == 0x0002000000000000:
+        if spidr_valid_frame == False and ((packet>>48 & 0xFFFF) in [0x0002,0x0020,0x0021,0x0022,0x0030,0x0031,0x0032]):
             spidr_valid_frame = True
             spidr_frame_counter = 0
             spidr_content_size = packet & 0xFFFFFFFF
