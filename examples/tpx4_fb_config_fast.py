@@ -146,10 +146,6 @@ with helpers.cl_connect() as channel:
         #Reset the pixel matrix
         tpx4.PixelMatrixReset(rpc.ChipIndex(idx=helpers.cl_chip_idx()))
 
-    #Configure DACs
-    # ------------------------------------------------------------------------------------------------------
-    dacs = dacs.DACs(tpx4,helpers.cl_chip_idx(),adc_half='TOP',adc='internal',debug=True)
-
     # Configure the output
     # ------------------------------------------------------------------------------------------------------
     if ns.ffly_mode:
@@ -196,8 +192,12 @@ with helpers.cl_connect() as channel:
         )
     )
 
+    #Configure DACs
+    # ------------------------------------------------------------------------------------------------------
+    dacs = dacs.DACs(tpx4,helpers.cl_chip_idx(),adc_half='TOP',adc='internal',debug=True)
+
     # Configure threshold in e. Polarity = 0 means electrons collection
-    dacs.conf_threshold(LOW_GAIN=ns.gain.lower()=='low',POLARITY=ns.polarity.lower()=='h',THR_e=ns.th_e,debug=True)
+    dacs.conf_threshold(THR_e=ns.th_e,debug=True)
 
     # Configure status monitor configuration
     # ------------------------------------------------------------------------------------------------------

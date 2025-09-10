@@ -63,7 +63,7 @@ dacs_lib = {
 }
 
 class DACs:
-  def __init__(self,tpx4_stub,chip_index, adc_half='TOP',adc='internal',debug=True):
+  def __init__(self,tpx4_stub,chip_index, adc_half='TOP',adc='internal',initialize=True, debug=True):
 
     self.tpx4 = tpx4_stub
     self.debug = debug
@@ -92,10 +92,17 @@ class DACs:
       # We're going to use the internal ADC, configure at 20 MHz with 32768 ADC cycles
       self.tpx4.ConfigAdc(rpc.Tpx4AdcConfig(clock_ref=20000000, nperiods=32*1024))
 
-    for dac,data in dacs_lib.items():
-       #Set DAC default value
-       if debug: print(f'Set DAC {dac} to default value {data['fb_default']:.3G} {data['unit']} ')
-       self.setDAC(dac,value=data['fb_default'],debug=self.debug)
+    readout_config = self.tpx4.ReadoutGetConfig(rpc.ChipIndex(idx=self.chip_index))
+    self.hole_polarity = readout_config.polarity
+    self.low_gain = readout_config.gain
+    #print(f'Polarity: {readout_config.polarity}')
+    #print(f'Gain: {readout_config.gain}')
+
+    if initialize == True:
+      for dac,data in dacs_lib.items():
+        #Set DAC default value
+        if debug: print(f'Set DAC {dac} to default value {data['fb_default']:.3G} {data['unit']} ')
+        self.setDAC(dac,value=data['fb_default'],debug=self.debug)
 
   def setDAC(self,dac_name,value,debug=True):
     if dac_name in dacs_lib.keys():
@@ -174,8 +181,7 @@ class DACs:
       print(f'ERROR: dac {dac_name} not in dac list. Cannot read')
       raise SystemExit
 
-  def conf_threshold(self,LOW_GAIN=False,
-                  POLARITY=True,
+  def conf_threshold(self,
                   THR_e=1000,
                   FBK_V=dacs_lib['VFBK']['fb_default'],
                   debug=True):
@@ -187,17 +193,17 @@ class DACs:
     # capacitance = (n*q)/V --> gain (V/e) = q/capacitance
     #Gain_Ve = 1.6e-19/Cf
     #We will use the value from Xavi scripts in V/e
-    Gain_Ve = 20.5e-6 if LOW_GAIN else 34.5e-6
+    Gain_Ve = 20.5e-6 if self.low_gain else 34.5e-6
 
     THR_FBK_V=THR_e*Gain_Ve
 
     rb_fbk = self.setDAC('VFBK',value=FBK_V,debug=debug)
 
-    THR_V = (FBK_V - THR_FBK_V) if POLARITY else (FBK_V + THR_FBK_V)
+    THR_V = (FBK_V - THR_FBK_V) if self.hole_polarity else (FBK_V + THR_FBK_V)
 
     rb_th = self.setDAC('VThreshold',value=THR_V,debug=debug)
 
-    meas_threshold_v = (rb_fbk - rb_th) if POLARITY else (rb_th - rb_fbk)
+    meas_threshold_v = (rb_fbk - rb_th) if self.hole_polarity else (rb_th - rb_fbk)
     meas_threshold_e = meas_threshold_v/Gain_Ve
 
     if debug:
