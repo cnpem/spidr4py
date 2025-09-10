@@ -4,7 +4,7 @@
 #
 #  tpx4_fb_fast.py
 #  
-#  Performs frame-based acquisitions using 10G interface or Optical Fast Linkes (Firefly)
+#  Performs frame-based configuration using 10G interface or Optical Fast Linkes (Firefly)
 #
 #  Authors: 
 #   Mauricio Donatti <mauricio.donatti@lnls.br>
@@ -15,15 +15,13 @@
 
 #Import python libs
 import sys
-import time
 import os
 from argparse import BooleanOptionalAction
-import numpy as np
 
 sys.path.insert(0, os.path.join(os.getcwd(),'..'))
 
 #Import spidr4 packages
-from spidr4 import rpc, tpx4tools, utils
+from spidr4 import rpc, utils
 
 #Import repository modules and functions
 import helpers
@@ -36,14 +34,11 @@ ns = helpers.cl_parse(with_chip_idx=True, args={
     '--channels-bot': dict(type=lambda x: int(x,0),default=0xFF,choices=range(0,256),metavar='[0x00-0xFF]',help='Choose BOTTOM channels to be enabled as hex 8bit'),
     '--link-speed-mbps': dict(type=int,choices=[40,80,160,320,640,1280,2560,5120,10240],default=2560,help='Link Speed in MHz'),
     "--xgbe-port": dict(help="10 GbE port", type=int, default=8192),
-    "--exposure-time-us": dict(type=int,default=10,help='Exposure time (shutter time) in microseconds'),
     "--crw-time-us": dict(type=int,default=1000,help='Continuous read-write time in microseconds'),
     '--counter': dict(choices=['8bit','16bit'],default='8bit',help='Frame based counter depth'),
     '--reset': dict(action=BooleanOptionalAction,default=True,help='reset Timepix4 ASIC at the beginning'),
-    '--load_equalization':dict(action=BooleanOptionalAction,default=True,help='load equalization'),
     '--status-packets':dict(action=BooleanOptionalAction,default=True,help='Enables sending output status packets in the data stream (for example, Shutter Rise/Fall)'),
     '--force-T0sync':dict(action=BooleanOptionalAction,default=False,help='Force to send T0Sync, even without reset'),
-    '--equalization-path':dict(type=str,default='equalization',help='path to input and output file'),
     '--th_e':dict(type=int,default=0,help='Threshold in e-'),
     '--polarity': dict(choices=['h','e'],default='e',help='Charge collection'),
     '--gain': dict(choices=['low','high'],default='high',help='CSA gain'),
@@ -142,24 +137,6 @@ with helpers.cl_connect() as channel:
     ctrl = rpc.ControlInfoStub(channel)
     tpx4 = rpc.Timepix4Stub(channel)
     datastream = rpc.DataStreamStub(channel)
-    trigger = rpc.TriggerStub(channel)
-
-    trigger.Enable(rpc.EMPTY)                       # Enable the trigger logic block
-    trigger.StopAutoShutter(rpc.EMPTY)              # Just in case it was still running
-    # Configure Trigger
-    # ------------------------------------------------------------------------------------------------------
-    trigger.SetConfig(
-        rpc.TriggerConfig(
-            shutter_input=rpc.SHUTTER_IN_AUTO_GEN,
-            t0_input=rpc.T0SYNC_IN_SOFTWARE,
-            #Works only with SHUTTER_IN_AUTO_GEN or SHUTTER_IN_AUTO_GEN_EXT_START
-            auto_shutter_open_us=ns.exposure_time_us,
-            auto_shutter_close_us=10,
-            shutter_count=1,
-            ####################################################################################
-        )
-    )
-    trigger.ResetShutterCounter(rpc.EMPTY)          # Reset shutter counter
 
     # Reset the pixel chips (will also load the default configuration)
     # ------------------------------------------------------------------------------------------------------
@@ -172,41 +149,6 @@ with helpers.cl_connect() as channel:
     #Configure DACs
     # ------------------------------------------------------------------------------------------------------
     dacs = dacs.DACs(tpx4,helpers.cl_chip_idx(),adc_half='TOP',adc='internal',debug=True)
-
-    # Configure Pixel Matrix - load equalization and mask bits
-    # ------------------------------------------------------------------------------------------------------
-    if ns.load_equalization == True:
-        mask_file = 'eq_mask_fb.dat'
-        eq_file = 'eq_codes_fb.dat'
-        if os.path.isdir(ns.equalization_path) and os.path.isfile(os.path.join(ns.equalization_path,eq_file)) and os.path.isfile(os.path.join(ns.equalization_path,mask_file)):
-
-            print(f'Loading equalization')
-            pixel_cfg_mtx = np.zeros((512, 448), dtype=np.uint8)
-
-            #loads equalization and mask bits from file
-            mask=np.loadtxt(os.path.join(ns.equalization_path,mask_file), dtype=np.bool)
-            equal=np.loadtxt(os.path.join(ns.equalization_path,eq_file), dtype=int)
-
-            #configure pixels and calculate number of masked ones
-            num_mask_pixels=0
-            for X in range(0,448,1):
-                for Y in range(0,512,1):
-                    pixel_cfg_mtx[Y][X] = tpx4tools.PixelConfig(dac=equal[X][Y], power_enable=not(mask[X][Y]), tp_enable=False, mask=mask[X][Y]).word
-                    #print(f'Pixel X:{X:03d} Y:{Y:03d} Equal: 0x{equal[X][Y]:02X} or {equal[X][Y]:02d} Mask: {mask[X][Y]}. Pixel cfg: 0x{pixel_cfg_mtx[Y][X]:02X} or {pixel_cfg_mtx[Y][X]:02d}')
-                    if mask[X][Y]:
-                        num_mask_pixels+=1
-            print(f'Num masked pixels: {num_mask_pixels}')
-
-            config_blob = tpx4tools.logic2chip_cfg_matrix(pixel_cfg_mtx)
-
-            tpx4.ConfigPixels(
-                    rpc.Tpx4PixelConfig(
-                            idx=helpers.cl_chip_idx(),
-                            config=config_blob.tobytes()
-                    )
-            )
-        else:
-            print(f"ERROR: {ns.equalization_path} is not a valid path or equalization files not found. Aborting equalization")
 
     # Configure the output
     # ------------------------------------------------------------------------------------------------------
@@ -272,15 +214,13 @@ with helpers.cl_connect() as channel:
         )
     )
 
-    # Configure shutter
+    # Configure shutter to Spidr4 trigger system (external to ASIC)
     # ------------------------------------------------------------------------------------------------------
     tpx4.ShutterSetConfig(
         rpc.Tpx4ShutterConfig(
             idx=helpers.cl_chip_idx(),
             mode=rpc.TPX4_SHUTTER_MODE_MANUAL,  #change to TPX4_SHUTTER_MODE_PROG_SINGLE for internal controlled shutter,
             input=rpc.TPX4_SHUTTER_INPUT_PAD,   #change to TPX4_SHUTTER_INPUT_SLOW_CONTROL to trigger internal shutter using SC
-            #prog_open_us=1,
-            #prog_close_us=1,
         )
     )
 
@@ -336,12 +276,3 @@ with helpers.cl_connect() as channel:
     #   It's known that one packet at the first segment will be lost if Tosync status packet is sent
     if ns.reset or ns.force_T0sync:
         tpx4.T0Sync(rpc.ChipIndex(idx=helpers.cl_chip_idx()))
-
-    print('Opening shutter')
-    trigger.StartAutoShutter(rpc.EMPTY)             # Start auto-shutter
-
-    status = trigger.GetStatus(rpc.EMPTY)           # Wait until it is done
-    while status.auto_shutter_busy:
-        time.sleep(0.1)
-        status = trigger.GetStatus(rpc.EMPTY)       # Get the current status
-        print(f"Shutter count: {status.shutter_counter}")
