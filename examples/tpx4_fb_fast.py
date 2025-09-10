@@ -119,32 +119,6 @@ def check_optimal_PLL(top = True,en_print=False):
         else:
             return True
 
-def start_frame_enable(en = True, top = True):
-    if top:
-        reg = 0xC204 #PACKET_READ_TOP register
-    else:
-        reg = 0x4204 #PACKET_READ_BOTTOM register
-
-    ans = tpx4.ReadReg(
-        rpc.ReadRegRequest(
-            idx=0,
-            addr=reg,
-        )
-    )
-
-    if en:
-        data_en = (int.from_bytes(ans.data) | 0x0010).to_bytes(2)
-    else:
-        data_en = (int.from_bytes(ans.data) & 0xFFEF).to_bytes(2)
-
-    tpx4.WriteReg(
-        rpc.WriteRegRequest(
-            idx=0,
-            addr=reg,
-            data=data_en
-        )
-    )
-
 if ns.ffly_mode == False:
     iface2find = ns.iface
     xgbe_port = ns.xgbe_port
