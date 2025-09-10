@@ -40,7 +40,7 @@ ns = helpers.cl_parse(with_chip_idx=True, args={
     "--crw-time-us": dict(type=int,default=1000,help='Continuous read-write time in microseconds'),
     '--counter': dict(choices=['8bit','16bit'],default='8bit',help='Frame based counter depth'),
     '--reset': dict(action=BooleanOptionalAction,default=True,help='reset Timepix4 ASIC at the beginning'),
-    '--equalize':dict(action=BooleanOptionalAction,default=True,help='load equalization'),
+    '--load_equalization':dict(action=BooleanOptionalAction,default=True,help='load equalization'),
     '--status-packets':dict(action=BooleanOptionalAction,default=True,help='Enables sending output status packets in the data stream (for example, Shutter Rise/Fall)'),
     '--force-T0sync':dict(action=BooleanOptionalAction,default=False,help='Force to send T0Sync, even without reset'),
     '--equalization-path':dict(type=str,default='equalization',help='path to input and output file'),
@@ -175,7 +175,7 @@ with helpers.cl_connect() as channel:
 
     # Configure Pixel Matrix - load equalization and mask bits
     # ------------------------------------------------------------------------------------------------------
-    if ns.equalize == True:
+    if ns.load_equalization == True:
         mask_file = 'eq_mask_fb.dat'
         eq_file = 'eq_codes_fb.dat'
         if os.path.isdir(ns.equalization_path) and os.path.isfile(os.path.join(ns.equalization_path,eq_file)) and os.path.isfile(os.path.join(ns.equalization_path,mask_file)):
