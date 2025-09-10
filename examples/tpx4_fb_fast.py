@@ -13,35 +13,28 @@
 #
 #############################################################################################################
 
-import threading
-
-import grpc
+#Import python libs
 import sys
 import time
 import os
-
-import numpy as np
-from spidr4 import rpc, tpx4tools, utils, stream
-import helpers
 from argparse import BooleanOptionalAction
+import numpy as np
 
-sys.path.insert(0, os.path.join(os.getcwd(),'..','common'))
 sys.path.insert(0, os.path.join(os.getcwd(),'..'))
 
+#Import spidr4 packages
+from spidr4 import rpc, tpx4tools, utils
+
+#Import repository modules and functions
+import helpers
 from common import dacs
-
-PACKET_READ_BOTTOM= 0x4204
-PACKET_READ_TOP= 0xC204
-
-counter_options = ['8bit','16bit']
-available_link_speed = [40,80,160,320,640,1280,2560,5120,10240]
 
 ns = helpers.cl_parse(with_chip_idx=True, args={
     "iface": dict(help="Network interface for Spidr4 10G link", type=str, nargs='?'),
     "--ffly-mode": dict(help="Use firefly links instead of the 10 GbE port", action=BooleanOptionalAction,default=False),
     '--channels-top': dict(type=lambda x: int(x,0),default=0xFF,choices=range(0,256),metavar='[0x00-0xFF]',help='Choose TOP channels to be enabled as hex 8bit'),
     '--channels-bot': dict(type=lambda x: int(x,0),default=0xFF,choices=range(0,256),metavar='[0x00-0xFF]',help='Choose BOTTOM channels to be enabled as hex 8bit'),
-    '--link-speed-mbps': dict(type=int,choices=available_link_speed,default=2560,help='Link Speed in MHz'),
+    '--link-speed-mbps': dict(type=int,choices=[40,80,160,320,640,1280,2560,5120,10240],default=2560,help='Link Speed in MHz'),
     "--xgbe-port": dict(help="10 GbE port", type=int, default=8192),
     "--exposure-time-us": dict(type=int,default=10,help='Exposure time (shutter time) in microseconds'),
     "--crw-time-us": dict(type=int,default=1000,help='Continuous read-write time in microseconds'),
@@ -128,9 +121,9 @@ def check_optimal_PLL(top = True,en_print=False):
 
 def start_frame_enable(en = True, top = True):
     if top:
-        reg = PACKET_READ_TOP
+        reg = 0xC204 #PACKET_READ_TOP register
     else:
-        reg = PACKET_READ_BOTTOM
+        reg = 0x4204 #PACKET_READ_BOTTOM register
 
     ans = tpx4.ReadReg(
         rpc.ReadRegRequest(
@@ -312,8 +305,8 @@ with helpers.cl_connect() as channel:
             idx=helpers.cl_chip_idx(),
             mode=rpc.TPX4_SHUTTER_MODE_MANUAL,  #change to TPX4_SHUTTER_MODE_PROG_SINGLE for internal controlled shutter,
             input=rpc.TPX4_SHUTTER_INPUT_PAD,   #change to TPX4_SHUTTER_INPUT_SLOW_CONTROL to trigger internal shutter using SC
-            prog_open_us=ns.exposure_time_us,
-            prog_close_us=1,
+            #prog_open_us=1,
+            #prog_close_us=1,
         )
     )
 
@@ -333,7 +326,9 @@ with helpers.cl_connect() as channel:
     else:
         # When using the 10 Gbps ethernet interface, only one link per top/bottom is active
         Nlinks = 1
-    LinkSpeed_Mbps = get_link_bw(top = True)      #default for spidr4 readout 10Gbps mode
+
+    #Compute register value (crw_regs_val) in order to match desired crw_wait_time for a given speed and links number
+    LinkSpeed_Mbps = max(link_top,link_bot)
     clk_datapath_MHz = 160                        #clk_datapath default config
     counter_depth = 8 if ns.counter == '8bit' else 16
     readout_time_frame_us = 256*448*counter_depth/(LinkSpeed_Mbps*Nlinks)
@@ -343,18 +338,13 @@ with helpers.cl_connect() as channel:
         crw_regs_val = 1
     print(f'Readout time per frame: {readout_time_frame_us} us. crw_wait_time register value: {crw_regs_val}')
 
-    crw_regs = {
-        'CRW_WAIT_TIME_TOP': 0xC202,
-        'CRW_WAIT_TIME_BOTTOM': 0x4202,
-    }
-
     #Configure CRW_WAIT_TIME Bottom and Top registers
-    for reg in crw_regs.keys():
+    for reg in [0xC202,0x4202]:#['CRW_WAIT_TIME_TOP','CRW_WAIT_TIME_BOTTOM']
     
         tpx4.WriteReg(
             rpc.WriteRegRequest(
                 idx=0,
-                addr=crw_regs[reg],
+                addr=reg,
                 data=crw_regs_val.to_bytes(4)
             )
         )
@@ -362,50 +352,14 @@ with helpers.cl_connect() as channel:
         ans = tpx4.ReadReg(
             rpc.ReadRegRequest(
                 idx=0,
-                addr=crw_regs[reg],
+                addr=reg,
             )
         )
 
         print(f'Register {reg:20}: {int.from_bytes(ans.data)} clock cycles, {int.from_bytes(ans.data)/(clk_datapath_MHz*1e6)} seconds')
-        
 
-    #Monitor a few registers to understand Timpeix4 behavior
-    registers = {
-        'MATRIX_SHUTTER':0x8061,
-        'MATRIX_CRW_TOP':0xC206,
-        'MATRIX_CRW_BOT':0x4206,
-        'MATRIX_RST':0x8060,
-        'STATUS_MON_TOP': 0xCC02,
-        'STATUS_MON_BOT': 0x4C02,
-        'PPROC_TOP':0xCC03,
-        'PPROC_BOT':0x4C03,
-        'GWT_CONF_TOP':0xC207,
-        'GWT_CONF_BOT':0x4207,
-        'GWT_CONF_PLL_TOP':0xC208,
-        'GWT_CONF_PLL_BOT':0x4208,
-        'PCSTX_CTRL_TOP':0xCC01,
-        'PCSTX_CTRL_BOT':0x4C01,
-        }
-
-    for reg in registers.keys():
-        
-        ans = tpx4.ReadReg(
-            rpc.ReadRegRequest(
-                idx=0,
-                addr=registers[reg],
-            )
-        )
-        print(f'Register {reg:20} 0x{registers[reg]:02X}: 0b{int.from_bytes(ans.data):016b}')
-
-    ############################################################################################
-    # We're not disabling start_frame_enable to workaround 16bit bug: https://timepix4.web.cern.ch/timepix4/timepix4/ChipOperation/bugs_knowissues_and_faq.html#bit-mode-start
-    ############################################################################################
-    # Enable start_frame
-    #start_frame_enable(en = True, top = True)
-    #start_frame_enable(en = True, top = False)
-    ############################################################################################
-    #Send T0Sync if a reset has been performed to start readout
-
+    #Force T0sync to start readout
+    #   It's known that one packet at the first segment will be lost if Tosync status packet is sent
     if ns.reset or ns.force_T0sync:
         tpx4.T0Sync(rpc.ChipIndex(idx=helpers.cl_chip_idx()))
 
@@ -417,9 +371,3 @@ with helpers.cl_connect() as channel:
         time.sleep(0.1)
         status = trigger.GetStatus(rpc.EMPTY)       # Get the current status
         print(f"Shutter count: {status.shutter_counter}")
-
-    ############################################################################################
-    # Disable start_frame and stop readout
-    #start_frame_enable(en = False, top = True)
-    #start_frame_enable(en = False, top = False)
-    ############################################################################################
