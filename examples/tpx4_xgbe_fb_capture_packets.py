@@ -43,7 +43,7 @@ def dir_path(path):
         raise ArgumentTypeError(f"readable_dir:{path} is not a valid path")
 
 #Define the asynchronous capture function to be launched as a thread
-def async_capture(port,decoder,stop_event):
+def async_capture(port,decoder,stop_event,new_frame_event):
     # Configure local data acquisition
     # ------------------------------------------------------------------------------------------------------
     print(f'Starting async capture. Port {port}')
@@ -57,7 +57,9 @@ def async_capture(port,decoder,stop_event):
     for data in stream.queue_generator(q, 20):
         decoder.read_packet(data)
         #Stop thread when stop event is set and the current frame is finished
-        if stop_event.is_set() and decoder.decoded_packet.name == 'FRAME_END':
+        if decoder.decoded_packet.name == 'FRAME_START' and decoder.state == 'FRAME':
+            new_frame_event.set()
+        if stop_event.is_set() and decoder.decoded_packet.name == 'FRAME_END' and decoder.state == 'IDLE':
             break
 
     # Stop and clean the current thread
@@ -135,20 +137,35 @@ with helpers.cl_connect() as channel:
     #Stop event is the signal to be sent to stop gracefully the threads
     stop_event = threading.Event()
 
+    #Create two events to signalize frame starts and synchronize shutters
+    start_event_top = threading.Event()
+    start_event_bot = threading.Event()
+
     #Create and start top and bottom threads
-    capture_thread_top = threading.Thread(target=async_capture, args=(xgbe_port,decoder_top,stop_event))
-    capture_thread_bot = threading.Thread(target=async_capture, args=(xgbe_port+1,decoder_bot,stop_event))
+    capture_thread_top = threading.Thread(target=async_capture, args=(xgbe_port,decoder_top,stop_event,start_event_top))
+    capture_thread_bot = threading.Thread(target=async_capture, args=(xgbe_port+1,decoder_bot,stop_event,start_event_bot))
     capture_thread_top.start()
     capture_thread_bot.start()
 
     #Wait exit, quit, q or e to send the stop event
     rec = ''
+    status = trigger.GetStatus(rpc.EMPTY)           # get trigger status
     while rec not in ['exit','quit','e','q']:
         rec = input('Type exit to stop reading threads and s to send a shutter....\n\r')
         if rec == 's':
-            status = trigger.GetStatus(rpc.EMPTY)           # get trigger status
+            #clear start flags
+            start_event_top.clear()
+            start_event_bot.clear()
+
             print(f'Sending shutter number {status.shutter_counter+1}')
+
+            #wait start events to send a shutter during a valid frame
+            start_event_top.wait()
+            start_event_bot.wait()
+
+            #send the shutter
             trigger.StartAutoShutter(rpc.EMPTY)             # Start auto-shutter
+            status = trigger.GetStatus(rpc.EMPTY)           # get trigger status
             while status.auto_shutter_busy:
                 time.sleep(0.1)
                 status = trigger.GetStatus(rpc.EMPTY)       # Get the current status
