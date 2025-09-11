@@ -213,3 +213,4 @@ pyrightconfig.json
 *.txt
 *.csv
 *.hdf5
+*.json
