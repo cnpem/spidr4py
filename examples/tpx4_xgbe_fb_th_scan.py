@@ -21,7 +21,6 @@ import numpy as np
 import os
 import h5py
 import sys
-import json
 import datetime
 import matplotlib.pyplot as plt
 from argparse import ArgumentTypeError #argparse is used inside helpers
@@ -175,21 +174,29 @@ with helpers.cl_connect() as channel:
     for arg in sys.argv:
         output['arguments'] += arg + ' '
     output['datetime'] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    output['exposure time (us)'] = ns.exposure_time_us
+    output['n points'] = ns.n_points
+    output['repeat'] = ns.repeat
+    output['threshold low (e)'] = ns.th_low_e
+    output['threshold high (e)'] = ns.th_high_e
+
+    #Create output data dictionary
+    output_data = {}
 
     #Build the threshold array to iterate
-    output['threshold_target'] = np.linspace(ns.th_low_e,ns.th_high_e,ns.n_points)
+    output_data['threshold_target'] = np.linspace(ns.th_low_e,ns.th_high_e,ns.n_points)
     valid_frames = []
 
-    output['threshold_readback'] = []
+    output_data['threshold_readback'] = []
 
-    for index,th in enumerate(output['threshold_target']):
+    for index,th in enumerate(output_data['threshold_target']):
         # Configure threshold in e. Polarity = 0 means electrons collection
         print('-----------------------------------------------------------')
-        output['threshold_readback'].append(dacs.conf_threshold(THR_e=th,debug=True))
+        output_data['threshold_readback'].append(dacs.conf_threshold(THR_e=th,debug=True))
 
         for i in range(ns.repeat):
 
-            print(f'Threshold scan step {index+1}/{ns.n_points}: th target {th:.2f} e-. Measured {output['threshold_readback'][index]:.2f}. Repetition {i+1}/{ns.repeat}')
+            print(f'Threshold scan step {index+1}/{ns.n_points}: th target {th:.2f} e-. Measured {output_data['threshold_readback'][index]:.2f}. Repetition {i+1}/{ns.repeat}')
 
             #clear start flags
             start_event_top.clear()
@@ -232,34 +239,33 @@ with helpers.cl_connect() as channel:
     for i in valid_frames:
         images.append(np.concatenate((decoder_bot.frames[i], np.rot90(decoder_top.frames[i], 2)), axis = 0))
 
-    print(f'Saving output image image in {ns.path} as {ns.filename}')
-    # Save images in a .hdf5 file
-    with h5py.File(os.path.join(ns.path,f'{ns.filename}.hdf5'), mode = 'w') as hdf5_file:
-        hdf5_file.create_dataset('/entry/data/data', data = images)
-
     #Sum the counts of valid images
     counter_sum = np.sum(images,axis=(1,2))
     counter_max = np.max(images,axis=(1,2))
     counter_mean = np.mean(images,axis=(1,2))
-    output['sum_per_image'] = counter_sum
+    output_data['sum_per_image'] = counter_sum
 
     #Calculated the mean for repeated images
-    output['sum_per_threshold'] = []
-    output['max_per_threshold'] = []
-    output['mean_per_threshold'] = []
+    output_data['sum_per_threshold'] = []
+    output_data['max_per_threshold'] = []
+    output_data['mean_per_threshold'] = []
     for i in range(ns.n_points):
-        output['sum_per_threshold'].append(np.sum(counter_sum[i*ns.repeat:(i+1)*ns.repeat])/ns.repeat)
-        output['max_per_threshold'].append(np.max(counter_max[i*ns.repeat:(i+1)*ns.repeat]))
-        output['mean_per_threshold'].append(np.mean(counter_mean[i*ns.repeat:(i+1)*ns.repeat]))
+        output_data['sum_per_threshold'].append(np.sum(counter_sum[i*ns.repeat:(i+1)*ns.repeat])/ns.repeat)
+        output_data['max_per_threshold'].append(np.max(counter_max[i*ns.repeat:(i+1)*ns.repeat]))
+        output_data['mean_per_threshold'].append(np.mean(counter_mean[i*ns.repeat:(i+1)*ns.repeat]))
 
-    #Save log file
-    with open(os.path.join(ns.path,f'{ns.filename}.json'), 'w') as outfile:
-        print(f'Saving output file as: {ns.filename}.json')
-        json.dump(output, outfile, indent=4, default=numpy_encoder)
+    print(f'Saving output image: {os.path.join(ns.path,f'{ns.filename}.hdf5')}')
+    # Save images in a .hdf5 file
+    with h5py.File(os.path.join(ns.path,f'{ns.filename}.hdf5'), mode = 'w') as hdf5_file:
+        hdf5_file.create_dataset('/entry/data/data', data = images)
+        for key in output.keys():
+            hdf5_file.attrs[key] = output[key]
+        for key in output_data.keys():
+            hdf5_file.create_dataset(f'/entry/data/{key}', data = output_data[key])
 
     #Plot the figure
     plt.figure()
-    plt.plot(output['threshold_target'],output['sum_per_threshold'])
+    plt.plot(output_data['threshold_target'],output_data['sum_per_threshold'])
     plt.title(f'Threshold Scan - {ns.exposure_time_us} us exposure')
     plt.xlabel('Threshold (e)')
     plt.ylabel('Counts Sum')
