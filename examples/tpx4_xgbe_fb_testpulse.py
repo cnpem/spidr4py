@@ -22,7 +22,6 @@ import os
 import h5py
 import sys
 import datetime
-import matplotlib.pyplot as plt
 from argparse import ArgumentTypeError #argparse is used inside helpers
 
 sys.path.insert(0, os.path.join(os.getcwd(),'..'))
