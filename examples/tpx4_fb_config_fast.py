@@ -126,7 +126,7 @@ if ns.ffly_mode == False:
     xgbe_spidr_ip = utils.inc_ip(xgbe_host_ip)
     print(f'Xgbe TOP port: {xgbe_port}')
     print(f'Xgbe BOT port: {xgbe_port+1}')
-    print(f'Spidr4 IP: {xgbe_spidr_ip}')
+    print(f'Spidr4 10G IP: {xgbe_spidr_ip}')
     print(f'Host IP: {xgbe_host_ip}')
 
 
