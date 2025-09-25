@@ -22,6 +22,7 @@ import numpy as np
 import os
 import h5py
 import sys
+import datetime
 from argparse import ArgumentTypeError #argparse is used inside helpers
 
 sys.path.insert(0, os.path.join(os.getcwd(),'..'))
@@ -147,6 +148,19 @@ with helpers.cl_connect() as channel:
     capture_thread_top.start()
     capture_thread_bot.start()
 
+    #Create an output log file
+    output = {}
+
+    #Create an argument array to save inside log file
+    output['arguments'] = ''
+    for arg in sys.argv:
+        output['arguments'] += arg + ' '
+    output['datetime'] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    #Build the threshold
+    output['threshold (e)'] = ns.th_e
+    output['exposure time (us)'] = ns.exposure_time_us
+
     #Wait exit, quit, q or e to send the stop event
     rec = ''
     status = trigger.GetStatus(rpc.EMPTY)           # get trigger status
@@ -185,7 +199,9 @@ with helpers.cl_connect() as channel:
     for i in range(min(len(decoder_top.frames),len(decoder_bot.frames))):
         images.append(np.concatenate((decoder_bot.frames[i], np.rot90(decoder_top.frames[i], 2)), axis = 0))
 
-    print(f'Saving output image image in {ns.path} as {ns.filename}')
+    print(f'Saving output image: {os.path.join(ns.path,f'{ns.filename}.hdf5')}')
     # Save images in a .hdf5 file
     with h5py.File(os.path.join(ns.path,f'{ns.filename}.hdf5'), mode = 'w') as hdf5_file:
         hdf5_file.create_dataset('/entry/data/data', data = images)
+        for key in output.keys():
+            hdf5_file.attrs[key] = output[key]
