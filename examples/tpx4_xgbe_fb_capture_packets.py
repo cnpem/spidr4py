@@ -23,7 +23,7 @@ import os
 import h5py
 import sys
 import datetime
-from argparse import ArgumentTypeError #argparse is used inside helpers
+from argparse import ArgumentTypeError,BooleanOptionalAction #argparse is used inside helpers
 
 sys.path.insert(0, os.path.join(os.getcwd(),'..'))
 
@@ -76,6 +76,7 @@ ns = helpers.cl_parse(with_chip_idx=True, args={
     '--debug':dict(type=int,choices=range(4),default=1,help='Print debug level. 0: no print, 1: standard, 2: verbose, 3: all messages'),
     "--exposure-time-us": dict(type=int,default=10,help='Exposure time (shutter time) in microseconds'),
     '--th_e':dict(type=int,default=0,help='Threshold in e-'),
+    '--auto-shutter':dict(action=BooleanOptionalAction,default=False,help='Retrigger shutter when readout finishes'),
 })
 
 # # Main loop, create network connection
@@ -164,25 +165,34 @@ with helpers.cl_connect() as channel:
     #Wait exit, quit, q or e to send the stop event
     rec = ''
     status = trigger.GetStatus(rpc.EMPTY)           # get trigger status
-    while rec not in ['exit','quit','e','q']:
-        rec = input('Type exit to stop reading threads and s to send a shutter....\n\r')
-        if rec == 's':
-            #clear start flags
-            start_event_top.clear()
-            start_event_bot.clear()
+    try:
+        while rec not in ['exit','quit','e','q']:
+            #auto shutter disabled waits for user to trigger next frame
+            if ns.auto_shutter == False:
+                rec = input('Type exit to stop reading threads and s to send a shutter....\n\r')
+            #auto shutter enabled automatically retrigger the shutter
+            else:
+                rec = 'shutter'
 
-            print(f'Sending shutter number {status.shutter_counter+1}')
+            if rec in ['s','S','shutter']:
+                #clear start flags
+                start_event_top.clear()
+                start_event_bot.clear()
 
-            #wait start events to send a shutter during a valid frame
-            start_event_top.wait()
-            start_event_bot.wait()
+                print(f'Sending shutter number {status.shutter_counter+1}')
 
-            #send the shutter
-            trigger.StartAutoShutter(rpc.EMPTY)             # Start auto-shutter
-            status = trigger.GetStatus(rpc.EMPTY)           # get trigger status
-            while status.auto_shutter_busy:
-                time.sleep(0.1)
-                status = trigger.GetStatus(rpc.EMPTY)       # Get the current status
+                #wait start events to send a shutter during a valid frame
+                start_event_top.wait()
+                start_event_bot.wait()
+
+                #send the shutter
+                trigger.StartAutoShutter(rpc.EMPTY)             # Start auto-shutter
+                status = trigger.GetStatus(rpc.EMPTY)           # get trigger status
+                while status.auto_shutter_busy:
+                    time.sleep(0.1)
+                    status = trigger.GetStatus(rpc.EMPTY)       # Get the current status
+    except KeyboardInterrupt:
+        pass
 
     #Send signal to stop read threads after the current frame
     stop_event.set()
