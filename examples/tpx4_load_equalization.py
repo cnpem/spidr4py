@@ -50,7 +50,7 @@ ns = helpers.cl_parse(with_chip_idx=True, args={
     '--equalization-path':dict(type=str,default='equalization',help='path to equalization files'),
     '--dac-codes-file':dict(type=str,default='eq_codes_fb.dat',help='path to dac codes file'),
     '--mask-file':dict(type=str,default='eq_mask_fb.dat',help='path to mask bit file'),
-    '--to-mask':dict(type=parse_tuples_pairs,nargs='+',help='mask additional pixels. Send pixels as tuples: (X1,Y1) (X2,Y2)'),
+    '--to-mask':dict(type=parse_tuples_pairs,default=(),nargs='+',help='mask additional pixels. Send pixels as tuples: (X1,Y1) (X2,Y2)'),
 })
 
 # # Main loop, create network connection
