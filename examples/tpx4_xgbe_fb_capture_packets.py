@@ -25,6 +25,10 @@ import sys
 import datetime
 from argparse import ArgumentTypeError,BooleanOptionalAction #argparse is used inside helpers
 
+import matplotlib
+matplotlib.use('QtAgg')
+import matplotlib.pyplot as plt
+
 sys.path.insert(0, os.path.join(os.getcwd(),'..'))
 
 #Import spidr4py packages
@@ -35,6 +39,10 @@ import helpers
 import fb_modules
 from common import dacs
 
+#Global shared variables and semaphore
+current_frame = 0
+lock = threading.Lock()
+
 # -----------------------------------------------------------------------------------------------------------
 #Create a dir_path to check if a dir exists
 def dir_path(path):
@@ -42,6 +50,13 @@ def dir_path(path):
         return path
     else:
         raise ArgumentTypeError(f"readable_dir:{path} is not a valid path")
+
+#Define function to plot images
+def live_plot(line,img):
+    line.set_data(img)
+    line.set_clim(vmin=0, vmax=np.max(img))
+    plt.pause(0.2)
+
 
 #Define the asynchronous capture function to be launched as a thread
 def async_capture(port,decoder,stop_event,new_frame_event):
@@ -59,6 +74,9 @@ def async_capture(port,decoder,stop_event,new_frame_event):
         decoder.read_packet(data)
         #Stop thread when stop event is set and the current frame is finished
         if decoder.decoded_packet.name == 'FRAME_START' and decoder.state == 'FRAME':
+            global current_frame
+            with lock:
+                current_frame = decoder.frame_counter
             new_frame_event.set()
         if stop_event.is_set() and decoder.decoded_packet.name == 'FRAME_END' and decoder.state == 'IDLE':
             break
@@ -77,6 +95,7 @@ ns = helpers.cl_parse(with_chip_idx=True, args={
     "--exposure-time-us": dict(type=int,default=10,help='Exposure time (shutter time) in microseconds'),
     '--th_e':dict(type=int,default=0,help='Threshold in e-'),
     '--auto-shutter':dict(action=BooleanOptionalAction,default=False,help='Retrigger shutter when readout finishes'),
+    '--live-viewer':dict(action=BooleanOptionalAction,default=False,help='Open a simple live viewer to see current image. This can affects readout performance'),
 })
 
 # # Main loop, create network connection
@@ -132,6 +151,14 @@ with helpers.cl_connect() as channel:
     )
     trigger.ResetShutterCounter(rpc.EMPTY)          # Reset shutter counter
 
+    if ns.live_viewer:
+        img = np.zeros((512,448))
+        fig = plt.figure()
+        plt.ion()  # Turn interactive mode on
+        # Plot the initial frame
+        line = plt.imshow(img,origin='lower') # Note the comma to unpack the list returned by plt.plot
+        cbar = plt.colorbar(line)
+
     # create class constructors to decode TOP and BOTTOM 64b packets
     decoder_top = fb_modules.Packet2Frame(debug=ns.debug,use_shutter_control_packets=shutter_control_packets)
     decoder_bot = fb_modules.Packet2Frame(debug=ns.debug,use_shutter_control_packets=shutter_control_packets)
@@ -162,11 +189,22 @@ with helpers.cl_connect() as channel:
     output['threshold (e)'] = ns.th_e
     output['exposure time (us)'] = ns.exposure_time_us
 
+    #control valid frames: used only for live viewer
+    frame_to_plot = []
+
     #Wait exit, quit, q or e to send the stop event
     rec = ''
     status = trigger.GetStatus(rpc.EMPTY)           # get trigger status
     try:
         while rec not in ['exit','quit','e','q']:
+
+            if ns.live_viewer and frame_to_plot:
+                if frame_to_plot[0] < len(decoder_bot.frames):
+                    idx = frame_to_plot.pop(0)
+                    print(f'Plotting frame {idx}')
+                    img = np.concatenate((decoder_bot.frames[idx], np.rot90(decoder_top.frames[idx], 2)), axis = 0)
+                    live_plot(line,img)
+
             #auto shutter disabled waits for user to trigger next frame
             if ns.auto_shutter == False:
                 rec = input('Type exit to stop reading threads and s to send a shutter....\n\r')
@@ -175,6 +213,7 @@ with helpers.cl_connect() as channel:
                 rec = 'shutter'
 
             if rec in ['s','S','shutter']:
+
                 #clear start flags
                 start_event_top.clear()
                 start_event_bot.clear()
@@ -187,6 +226,12 @@ with helpers.cl_connect() as channel:
 
                 #send the shutter
                 trigger.StartAutoShutter(rpc.EMPTY)             # Start auto-shutter
+
+                if ns.live_viewer:
+                    # Mark current frame as valid and trigger new plot
+                    with lock:
+                        frame_to_plot.append(current_frame + 1)
+
                 status = trigger.GetStatus(rpc.EMPTY)           # get trigger status
                 while status.auto_shutter_busy:
                     time.sleep(0.1)
@@ -199,6 +244,8 @@ with helpers.cl_connect() as channel:
 
     status = trigger.GetStatus(rpc.EMPTY)           # get trigger status
     print(f"Shutter count: {status.shutter_counter}")
+
+    plt.close()
 
     #wait threads to finish
     capture_thread_top.join()
