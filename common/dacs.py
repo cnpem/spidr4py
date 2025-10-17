@@ -16,6 +16,7 @@
 #############################################################################################################
 
 from spidr4 import rpc
+import sys
 
 LOOP_MAX_ITERATIONS = 100
 VOLTAGE_TOLERANCE_8B = 1e-3
@@ -173,11 +174,13 @@ dacs_lib = {
 }
 
 class DACs:
-  def __init__(self,tpx4_stub,chip_index, adc_half='TOP',adc='internal',initialize=True, debug=True):
+  def __init__(self,tpx4_stub,chip_index, adc_half='TOP',adc='internal',initialize=True, debug=True, dac_mode = 'fb_default'):
 
     self.tpx4 = tpx4_stub
     self.debug = debug
     self.chip_index = chip_index
+    self.dac_mode = dac_mode
+    print(f'Setting dacs to dac mode {dac_mode}')
     #Check adc half matrix validity
     match adc_half.upper():
       case 'BOT':
@@ -211,8 +214,12 @@ class DACs:
     if initialize == True:
       for dac,data in dacs_lib.items():
         #Set DAC default value
-        if debug: print(f'Set DAC {dac} to default value {data['fb_default']:.3G} {data['unit']} ')
-        self.setDAC(dac,value=data['fb_default'],debug=self.debug)
+        if dac_mode in data.keys():
+          if debug: print(f'Set DAC {dac} to default value {data[dac_mode]:.3G} {data['unit']} ')
+          self.setDAC(dac,value=data[dac_mode],debug=self.debug)
+        else:
+          print(f'ERROR: dac_mode {dac_mode} not found!')
+          sys.exit()
 
   def setDAC(self,dac_name,value,debug=True):
     if dac_name in dacs_lib.keys():
@@ -293,7 +300,7 @@ class DACs:
 
   def conf_threshold(self,
                   THR_e=1000,
-                  FBK_V=dacs_lib['VFBK']['fb_default'],
+                  FBK_V=None,
                   debug=True):
 
     # Nominal calculation of gain does not represent the real gain, Timepix4 CSA parasitic capacitance is around 1.7fF
@@ -303,6 +310,10 @@ class DACs:
     # capacitance = (n*q)/V --> gain (V/e) = q/capacitance
     #Gain_Ve = 1.6e-19/Cf
     #We will use the value from Xavi scripts in V/e
+
+    if FBK_V == None:
+      FBK_V = dacs_lib['VFBK'][self.dac_mode]
+
     Gain_Ve = 20.5e-6 if self.low_gain else 34.5e-6
 
     THR_FBK_V=THR_e*Gain_Ve
