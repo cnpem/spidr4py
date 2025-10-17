@@ -106,7 +106,7 @@ def config_test_pulse(ctrl, tpx4, datastream, chip_idx):
     tpx4.TestPulseEnable(rpc.ChipIndex(idx=chip_idx))
 
 
-def scan_tp(tpx4, chip_idx):
+def scan_tp(tpx4, chip_idx,n_pulses=1):
     # tpx4.ShutterOpen(rpc.ChipIndex(idx=chip_idx))
     sys.stdout.write("Pulsing columns")
     for i in range(224):
@@ -118,9 +118,11 @@ def scan_tp(tpx4, chip_idx):
             # ------------------------------------------------------------------------------------------------------
             tpConfig = rpc.Tpx4TestPulseConfig(
                 idx=chip_idx,
-                count=1,
-                period_on_us=1,
-                period_off_us=1,
+                count=n_pulses,
+                #period_on_us=1,
+                period_on=1,
+                #period_off_us=1,
+                period_off=1,
                 digital=True,
                 link_shutter=True,
                 shutter2tp_latency=2,
@@ -138,7 +140,7 @@ def scan_tp(tpx4, chip_idx):
         tpx4.TestPulseStart(rpc.ChipIndex(idx=chip_idx))
 
         # Wait for some data...
-        time.sleep(0.01)
+        time.sleep(0.01+(n_pulses*2+2)*25e-9)
     print("Done!", file=sys.stdout)
 
     tpx4.ShutterClose(rpc.ChipIndex(idx=chip_idx))
