@@ -73,7 +73,7 @@ def async_capture(port,decoder,stop_event,new_frame_event):
     for data in stream.queue_generator(q, 20):
         decoder.read_packet(data)
         #Stop thread when stop event is set and the current frame is finished
-        if decoder.decoded_packet.name == 'FRAME_START' and decoder.state == 'FRAME':
+        if decoder.decoded_packet.name == 'FRAME_START' and decoder.state != 'SEGMENT':
             global current_frame
             with lock:
                 current_frame = decoder.frame_counter

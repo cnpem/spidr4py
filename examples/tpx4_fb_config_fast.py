@@ -152,7 +152,7 @@ with helpers.cl_connect() as channel:
         # Use optical links (FireFly) to stream raw Timepix4 data
         datastream.ConfigOptical(rpc.OpticalLinkConfig(
                 idx=helpers.cl_chip_idx(),
-                channels=(ns.channels_top << 8) | ns.channels_bot,
+                channels=(ns.channels_bot << 8) | ns.channels_top,
                 link_speed=ns.link_speed_mbps
         ))
     else:
