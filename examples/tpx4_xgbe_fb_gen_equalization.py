@@ -96,14 +96,19 @@ ns = helpers.cl_parse(with_chip_idx=True, args={
     '--filename':dict(type=str,default='equalization',help='test name to be appended to output filename'),
     '--debug':dict(type=int,choices=range(4),default=1,help='Print debug level. 0: no print, 1: standard, 2: verbose, 3: all messages'),
     "--exposure-time-us": dict(type=int,default=10,help='Exposure time (shutter time) in microseconds'),
-    '--repeat':dict(required=False,type=int,default=1,help='Number of repetitions per dac step')
+    '--repeat':dict(required=False,type=int,default=1,help='Number of repetitions per dac step'),
+    '--dac-mode': dict(help='Select DAC mode to be loaded', default = 'fb_default', type=str),
 })
 
 #Call frame based configuration script resetting the chip
-os.system(f"python3 tpx4_fb_config_fast.py {ns.iface} --host {ns.host} \
+ans = os.system(f"python3 tpx4_fb_config_fast.py {ns.iface} --host {ns.host} \
     --port {ns.port} --chip-idx {ns.chip_idx} --no-ffly-mode --xgbe-port {ns.xgbe_port} \
     --crw-time-us 500000 --counter 16bit --reset --th_e 0 --gain high --no-status-packets \
-    --polarity e")
+    --polarity e --dac-mode {ns.dac_mode}")
+
+if ans != 0:
+    print(f'ERROR: running tpx4_fb_config_fast.py: {ans}')
+    sys.exit(1)
 
 # # Main loop, create network connection
 with helpers.cl_connect() as channel:
@@ -127,7 +132,7 @@ with helpers.cl_connect() as channel:
 
     #Instantiate DAC class without initialize DACs (do not override configuration from tpx4_fb_config_fast.py script)
     # ------------------------------------------------------------------------------------------------------
-    dacs = dacs.DACs(tpx4,helpers.cl_chip_idx(),adc_half='TOP',adc='internal',debug=True, initialize=False)
+    dacs = dacs.DACs(tpx4,helpers.cl_chip_idx(),adc_half='TOP',adc='internal',debug=True, initialize=False, dac_mode=ns.dac_mode)
 
     trigger.Enable(rpc.EMPTY)                       # Enable the trigger logic block
     trigger.StopAutoShutter(rpc.EMPTY)              # Just in case it was still running
