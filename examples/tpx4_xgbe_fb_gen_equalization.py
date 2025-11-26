@@ -54,14 +54,6 @@ def numpy_encoder(obj):
             return obj.item()
     raise TypeError('Unknown type:', type(obj))
 
-# -----------------------------------------------------------------------------------------------------------
-#Create a dir_path to check if a dir exists
-def dir_path(path):
-    if os.path.isdir(path):
-        return path
-    else:
-        raise ArgumentTypeError(f"readable_dir:{path} is not a valid path")
-
 #Define the asynchronous capture function to be launched as a thread
 def async_capture(port,decoder,stop_event,new_frame_event):
     # Configure local data acquisition
@@ -93,8 +85,8 @@ def async_capture(port,decoder,stop_event,new_frame_event):
 ns = helpers.cl_parse(with_chip_idx=True, args={
     "iface": dict(help="Network interface", type=str),
     "--xgbe-port": dict(help="10 GbE port", type=int, default=8192),
-    '--path':dict(type=dir_path,required=True,help='path to output files'),
-    '--filename':dict(type=str,default='equalization',help='test name to be appended to output filename'),
+    '--path':dict(type=str,default='results',help='path to output files'),
+    '--testname':dict(type=str,default='equalization',help='test name to create results directory'),
     '--debug':dict(type=int,choices=range(4),default=1,help='Print debug level. 0: no print, 1: standard, 2: verbose, 3: all messages'),
     "--exposure-time-us": dict(type=int,default=10,help='Exposure time (shutter time) in microseconds'),
     '--repeat':dict(required=False,type=int,default=1,help='Number of repetitions per dac step'),
@@ -103,6 +95,28 @@ ns = helpers.cl_parse(with_chip_idx=True, args={
     '--exposure-time-hot-us':dict(type=int,default=1e6,help='Exposure time to look for hot pixels in microseconds'),
     '--repeat-hot':dict(required=False,type=int,default=10,help='Number of image repetitions for hot pixels search')
 })
+
+#Create an output log file
+output = {}
+
+#Create an argument array to save inside log file
+output['arguments'] = ''
+for arg in sys.argv:
+    output['arguments'] += arg + ' '
+output['datetime'] = datetime.datetime.now().strftime("%Y-%m-%d_%Hh%Mm%Ss")
+
+#Get git repo information and append to metadata
+output['git url'] = subprocess.check_output('git config --get remote.origin.url',shell=True)
+output['git commit id'] = subprocess.check_output('git rev-parse HEAD',shell=True)
+output['git last commit date'] = subprocess.check_output("git log -1 --format='%cd'",shell=True)
+
+#Store all arguments to output as they will be saved as hdf5 attributes
+for arg_name, arg_value in vars(ns).items():
+    output[arg_name] = arg_value
+
+#Create expected directories
+output['fullpath'] = os.path.join(os.getcwd(),ns.path,f'{output['datetime']}_{ns.testname}')
+os.makedirs(output['fullpath'],exist_ok=True)
 
 #Call frame based configuration script resetting the chip
 ans = os.system(f"python3 tpx4_fb_config_fast.py {ns.iface} --host {ns.host} \
@@ -172,24 +186,6 @@ with helpers.cl_connect() as channel:
     capture_thread_top.start()
     capture_thread_bot.start()
 
-    #Create an output log file
-    output = {}
-
-    #Create an argument array to save inside log file
-    output['arguments'] = ''
-    for arg in sys.argv:
-        output['arguments'] += arg + ' '
-    output['datetime'] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-    #Get git repo information and append to metadata
-    output['git url'] = subprocess.check_output('git config --get remote.origin.url',shell=True)
-    output['git commit id'] = subprocess.check_output('git rev-parse HEAD',shell=True)
-    output['git last commit date'] = subprocess.check_output("git log -1 --format='%cd'",shell=True)
-
-    #Store all arguments to output as they will be saved as hdf5 attributes
-    for arg_name, arg_value in vars(ns).items():
-        output[arg_name] = arg_value
-
     #Get Spidr4 and Timepix info
     # Get the version
     version = ctrl.GetVersion(rpc.EMPTY)
@@ -214,7 +210,6 @@ with helpers.cl_connect() as channel:
         output['Chip Type'] = rpc.PixelChipType.Name(chip.type)
         output['Chip Revision'] = chip.revision
         output['Chip ID'] = f'{chip.chip_id:08x}'
-        print(chip.chip_id)
 
     #Create output data dictionary
     output_data = {}
@@ -381,9 +376,9 @@ with helpers.cl_connect() as channel:
     # Save equalization and mask bits matrix
     # TO DO
 
-    print(f'Saving output image: {os.path.join(ns.path,f'{ns.filename}.hdf5')}')
+    print(f'Saving output hdf5: {os.path.join(output['fullpath'],'equalization.hdf5')}')
     # Save images in a .hdf5 file
-    with h5py.File(os.path.join(ns.path,f'{ns.filename}.hdf5'), mode = 'w') as hdf5_file:
+    with h5py.File(os.path.join(output['fullpath'],'equalization.hdf5'), mode = 'w') as hdf5_file:
         hdf5_file.create_dataset('/entry/data/data', data = images)
         for key in output.keys():
             hdf5_file.attrs[key] = output[key]
@@ -398,12 +393,12 @@ with helpers.cl_connect() as channel:
     plt.ylabel('Number of Pixels')
     plt.grid()
     plt.tight_layout()
-    plt.savefig(os.path.join(ns.path,f'{ns.filename}_histogram.png'))
+    plt.savefig(os.path.join(output['fullpath'],'dac_codes_histogram.png'))
     plt.show()
 
     #Plot masked pixels matrix
     plt.figure()
     plt.imshow(output_data['masked'],origin='lower')
     plt.title(f'{output['Number of masked']} masked pixels matrix. {output['Percentual masked']:.2f} %')
-    plt.savefig(os.path.join(ns.path,f'{ns.filename}_masked.png'))
+    plt.savefig(os.path.join(output['fullpath'],'masked_pixels.png'))
     plt.show()
