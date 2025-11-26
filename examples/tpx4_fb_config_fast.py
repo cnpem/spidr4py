@@ -42,6 +42,7 @@ ns = helpers.cl_parse(with_chip_idx=True, args={
     '--th_e':dict(type=int,default=0,help='Threshold in e-'),
     '--polarity': dict(choices=['h','e'],default='e',help='Charge collection'),
     '--gain': dict(choices=['low','high'],default='high',help='CSA gain'),
+    '--dac-mode': dict(help='Select DAC mode to be loaded', default = 'fb_default', type=str),
 })
 
 if ns.iface == None and ns.ffly_mode == False:
@@ -194,7 +195,7 @@ with helpers.cl_connect() as channel:
 
     #Configure DACs
     # ------------------------------------------------------------------------------------------------------
-    dacs = dacs.DACs(tpx4,helpers.cl_chip_idx(),adc_half='TOP',adc='internal',debug=True,dac_mode='fb_default')
+    dacs = dacs.DACs(tpx4,helpers.cl_chip_idx(),adc_half='TOP',adc='internal',debug=True,dac_mode=ns.dac_mode)
 
     # Configure threshold in e. Polarity = 0 means electrons collection
     dacs.conf_threshold(THR_e=ns.th_e,debug=True)
