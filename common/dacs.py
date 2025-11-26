@@ -16,6 +16,7 @@
 #############################################################################################################
 
 from spidr4 import rpc
+import sys
 
 LOOP_MAX_ITERATIONS = 100
 VOLTAGE_TOLERANCE_8B = 1e-3
@@ -27,12 +28,49 @@ VOLTAGE_TOLERANCE_10B = 500e-6
 #for DAC see Spidr4 api reference: https://spidr4.nikhef.nl/docs/html/reference/grpc.html#tpx4dac
 #for DAC_OUT choices see Spidr4 api reference: https://spidr4.nikhef.nl/docs/html/reference/grpc.html#tpx4dacout
 dacs_lib = {
+  'VBiasPreamp':{
+    'bits':8,
+    'unit':'A',
+    'xavi_default':438e-9,
+    'fast_default':728e-9,
+    'lp_default':100e-9,
+    'fb_default':100e-9,
+    'fullscale':1.45e-6,
+    'DAC':rpc.TPX4_DAC_VBIASPREAMP,
+    'DAC_OUT_TOP': rpc.TPX4_OUT_VBIASPREAMP_TOP,
+    'DAC_OUT_BOT': rpc.TPX4_OUT_VBIASPREAMP_BOT,
+  },
+  'VCascPreamp':{
+    'bits':8,
+    'unit':'V',
+    'xavi_default':750e-3,
+    'fast_default':750e-3,
+    'lp_default':750e-3,
+    'fb_default':750e-3,
+    'fullscale':1.2,
+    'DAC':rpc.TPX4_DAC_VCASCPREAMP,
+    'DAC_OUT_TOP': rpc.TPX4_OUT_VCASCPREAMP_TOP,
+    'DAC_OUT_BOT': rpc.TPX4_OUT_VCASCPREAMP_BOT,
+  },
+  'VBiasLevelShift':{
+    'bits':8,
+    'unit':'A',
+    'xavi_default':500e-9,
+    'fast_default':500e-9,
+    'lp_default':100e-9,
+    'fb_default':100e-9,
+    'fullscale':1.45e-6,
+    'DAC':rpc.TPX4_DAC_VBIASLEVELSHIFT,
+    'DAC_OUT_TOP': rpc.TPX4_OUT_VBIASLEVELSHIFTPMOS_TOP,
+    'DAC_OUT_BOT': rpc.TPX4_OUT_VBIASLEVELSHIFTPMOS_BOT,
+  },
   'VBiasIkrum':{
     'bits':8,
     'unit':'A',
+    'xavi_default':1.6e-9,
     'fast_default':1e-9,
     'lp_default':1e-9,
-    'fb_default':50e-9,
+    'fb_default':1.6e-9,
     'fullscale':100e-9,
     'DAC':rpc.TPX4_DAC_VBIASIKRUM,
     'DAC_OUT_TOP':rpc.TPX4_OUT_VBIASIKRUM_TOP,
@@ -41,6 +79,7 @@ dacs_lib = {
   'VFBK':{
     'bits':8,
     'unit':'V',
+    'xavi_default':500e-3,
     'fast_default':500e-3,
     'lp_default':500e-3,
     'fb_default':500e-3,
@@ -49,25 +88,112 @@ dacs_lib = {
     'DAC_OUT_TOP':rpc.TPX4_OUT_VBFK_TOP,
     'DAC_OUT_BOT':rpc.TPX4_OUT_VBFK_BOT,
   },
+  'VTpulseCoarse':{
+    'bits':8,
+    'unit':'V',
+    'xavi_default':600e-3,
+    'fast_default':600e-3,
+    'lp_default':600e-3,
+    'fb_default':600e-3,
+    'fullscale':1.2,
+    'DAC':rpc.TPX4_DAC_VTPULSECOARSE,
+    'DAC_OUT_TOP': rpc.TPX4_OUT_VTPULSECOARSE_TOP,
+    'DAC_OUT_BOT': rpc.TPX4_OUT_VTPULSECOARSE_BOT,
+  },
+  'VTpulseFine':{
+    'bits':14,
+    'unit':'V',
+    'xavi_default':600e-3,
+    'fast_default':600e-3,
+    'lp_default':600e-3,
+    'fb_default':600e-3,
+    'fullscale':1.2,
+    'DAC':rpc.TPX4_DAC_VTPULSEFINE,
+    'DAC_OUT_TOP': rpc.TPX4_OUT_VTPULSEFINE_TOP,
+    'DAC_OUT_BOT': rpc.TPX4_OUT_VTPULSEFINE_BOT,
+  },
+  'VBiasDiscTailNMOS':{
+    'bits':8,
+    'unit':'A',
+    'xavi_default':865e-9,
+    'fast_default':1.34e-6,
+    'lp_default':210e-9,
+    'fb_default':210e-9,
+    'fullscale':3.1e-6,
+    'DAC':rpc.TPX4_DAC_VBIASDISCTAILNMOS,
+    'DAC_OUT_TOP': rpc.TPX4_OUT_VBIASDISCTAILNMOS_TOP,
+    'DAC_OUT_BOT': rpc.TPX4_OUT_VBIASDISCTAILNMOS_BOT,
+  },
+  'VBiasDiscPMOS':{
+    'bits':8,
+    'unit':'A',
+    'xavi_default':400e-9,
+    'fast_default':920e-9,
+    'lp_default':300e-9,
+    'fb_default':300e-9,
+    'fullscale':3.6e-6,
+    'DAC':rpc.TPX4_DAC_VBIASDISCPMOS,
+    'DAC_OUT_TOP': rpc.TPX4_OUT_VBIASDISCPMOS_TOP,
+    'DAC_OUT_BOT': rpc.TPX4_OUT_VBIASDISCPMOS_BOT,
+  },
+  'VBiasDiscTRAFF':{
+    'bits':8,
+    'unit':'A',
+    'xavi_default':780e-9,
+    'fast_default':500e-9,
+    'lp_default':250e-9,
+    'fb_default':250e-9,
+    'fullscale':4e-6,
+    'DAC':rpc.TPX4_DAC_VBIASDISCTRAFF,
+    'DAC_OUT_TOP': rpc.TPX4_OUT_VBIASDISCTRAFF_TOP,
+    'DAC_OUT_BOT': rpc.TPX4_OUT_VBIASDISCTRAFF_BOT,
+  },
+  'VCascDisc':{
+    'bits':8,
+    'unit':'V',
+    'xavi_default':550e-3,
+    'fast_default':550e-3,
+    'lp_default':550e-3,
+    'fb_default':550e-3,
+    'fullscale':1.2,
+    'DAC':rpc.TPX4_DAC_VCASCDISC,
+    'DAC_OUT_TOP': rpc.TPX4_OUT_VCASCDISC_TOP,
+    'DAC_OUT_BOT': rpc.TPX4_OUT_VCASCDISC_BOT,
+  },
   'VThreshold':{
     'bits':14,
     'unit':'V',
+    'xavi_default':540e-3,
     'fast_default':540e-3,
     'lp_default':540e-3,
-    'fb_default':500e-3,
+    'fb_default':540e-3,
     'fullscale':1.2,
     'DAC':rpc.TPX4_DAC_VTHRESHOLD,
     'DAC_OUT_TOP': rpc.TPX4_OUT_VTHRESHOLD_TOP,
     'DAC_OUT_BOT': rpc.TPX4_OUT_VTHRESHOLD_BOT,
   },
+  'VBiasDAC':{
+    'bits':8,
+    'unit':'A',
+    'xavi_default':40e-9,  ### Xavi / Reference
+    'fast_default':78e-9,
+    'lp_default':16e-9,
+    'fb_default':16e-9,
+    'fullscale':160e-9,
+    'DAC':rpc.TPX4_DAC_VBIASDAC,
+    'DAC_OUT_TOP': rpc.TPX4_OUT_VBIASDAC_BIAS_TOP,
+    'DAC_OUT_BOT': rpc.TPX4_OUT_VBIASDAC_BIAS_BOT,
+  },
 }
 
 class DACs:
-  def __init__(self,tpx4_stub,chip_index, adc_half='TOP',adc='internal',initialize=True, debug=True):
+  def __init__(self,tpx4_stub,chip_index, adc_half='TOP',adc='internal',initialize=True, debug=True, dac_mode = 'fb_default'):
 
     self.tpx4 = tpx4_stub
     self.debug = debug
     self.chip_index = chip_index
+    self.dac_mode = dac_mode
+    print(f'Setting dacs to dac mode {dac_mode}')
     #Check adc half matrix validity
     match adc_half.upper():
       case 'BOT':
@@ -101,8 +227,12 @@ class DACs:
     if initialize == True:
       for dac,data in dacs_lib.items():
         #Set DAC default value
-        if debug: print(f'Set DAC {dac} to default value {data['fb_default']:.3G} {data['unit']} ')
-        self.setDAC(dac,value=data['fb_default'],debug=self.debug)
+        if dac_mode in data.keys():
+          if debug: print(f'Set DAC {dac} to default value {data[dac_mode]:.3G} {data['unit']} ')
+          self.setDAC(dac,value=data[dac_mode],debug=self.debug)
+        else:
+          print(f'ERROR: dac_mode {dac_mode} not found!')
+          sys.exit()
 
   def setDAC(self,dac_name,value,debug=True):
     if dac_name in dacs_lib.keys():
@@ -183,7 +313,7 @@ class DACs:
 
   def conf_threshold(self,
                   THR_e=1000,
-                  FBK_V=dacs_lib['VFBK']['fb_default'],
+                  FBK_V=None,
                   debug=True):
 
     # Nominal calculation of gain does not represent the real gain, Timepix4 CSA parasitic capacitance is around 1.7fF
@@ -193,6 +323,10 @@ class DACs:
     # capacitance = (n*q)/V --> gain (V/e) = q/capacitance
     #Gain_Ve = 1.6e-19/Cf
     #We will use the value from Xavi scripts in V/e
+
+    if FBK_V == None:
+      FBK_V = dacs_lib['VFBK'][self.dac_mode]
+
     Gain_Ve = 20.5e-6 if self.low_gain else 34.5e-6
 
     THR_FBK_V=THR_e*Gain_Ve
