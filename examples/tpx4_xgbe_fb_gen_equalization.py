@@ -98,6 +98,9 @@ ns = helpers.cl_parse(with_chip_idx=True, args={
     "--exposure-time-us": dict(type=int,default=10,help='Exposure time (shutter time) in microseconds'),
     '--repeat':dict(required=False,type=int,default=1,help='Number of repetitions per dac step'),
     '--dac-mode': dict(help='Select DAC mode to be loaded', default = 'fb_default', type=str),
+    '--th-hot-e':dict(type=int,default=2000,help='Threshold to look for hot pixels in e-'),
+    '--exposure-time-hot-us':dict(type=int,default=1e6,help='Exposure time to look for hot pixels in microseconds'),
+    '--repeat-hot':dict(required=False,type=int,default=10,help='Number of image repetitions for hot pixels search')
 })
 
 #Call frame based configuration script resetting the chip
@@ -283,20 +286,43 @@ with helpers.cl_connect() as channel:
                     output_data['max_count'][Y][X]=normalized_images[dac_code][Y][X]
                     output_data['equalization_code'][Y][X]=dac_code
 
+    output['dead pixels number'] = 0
     # Writes threshold config value 15 and mask dead pixels
     for X in range(0,ARRAY_SIZE_X,1):
         for Y in range(0,ARRAY_SIZE_Y,1):
             if output_data['max_count'][Y][X] == 0:
                 output_data['dead_pixels'][Y][X]=1
                 output_data['equalization_code'][Y][X]=15
-
-    #Load equalization
-    # TO DO
+                output['dead pixels number'] += 1
 
     #Search for hot pixels
+    # ------------------------------------------------------------------------------------------------------
+    #Load equalization
+    for X in range(0,ARRAY_SIZE_X,1):
+        for Y in range(0,ARRAY_SIZE_Y,1):
+            pixel_cfg_mtx[Y][X] = tpx4tools.PixelConfig(dac=output_data['equalization_code'][Y][X], power_enable=not(output_data['dead_pixels'][Y][X]), tp_enable=False, mask=output_data['dead_pixels'][Y][X]).word
+
+    #Serialize pixel config data
+    config_blob = tpx4tools.logic2chip_cfg_matrix(pixel_cfg_mtx)
+
+    #Send pixel configuration to the ASIC
+    tpx4.ConfigPixels(
+            rpc.Tpx4PixelConfig(
+                    idx=helpers.cl_chip_idx(),
+                    config=config_blob.tobytes()
+            )
+    )
+
+    #Create hot pixels matrix and counter
     output_data['hot_pixels']=np.zeros(shape=(ARRAY_SIZE_Y,ARRAY_SIZE_X), dtype='int')
+    output['hot pixels number'] = 0
+
+    # Configure threshold in e. Polarity = 0 means electrons collection
+    dacs.conf_threshold(THR_e=ns.th_hot_e,debug=True)
+
     # TO DO
 
+    #Compute mask pixels as dead or hot pixels
     output_data['masked'] = np.logical_or(output_data['dead_pixels'],output_data['hot_pixels'])
 
     output_data['masked_coordinates']=np.argwhere(output_data['masked']>0)
@@ -306,6 +332,7 @@ with helpers.cl_connect() as channel:
     # Prints information of masked pixels
     #for Y,X in output_data['masked_coordinates']:
     #    print(f"mask ({X},{Y}): max count {output_data['max_count'][Y][X]} equalization code {output_data['equalization_code'][Y][X]}")
+    print(f"Dead pixels number: {output['dead pixels number']}\t Hot pixels number: {output['hot pixels number']}")
     print(f"Total of masked pixels: {output['Number of masked']}/{ARRAY_SIZE_X*ARRAY_SIZE_Y} = {output['Percentual masked']:.2f} %")
 
     #Calculate the histogram of DAC codes
