@@ -24,6 +24,7 @@ import sys
 import datetime
 import matplotlib.pyplot as plt
 from argparse import ArgumentTypeError #argparse is used inside helpers
+import subprocess
 
 sys.path.insert(0, os.path.join(os.getcwd(),'..'))
 
@@ -179,8 +180,14 @@ with helpers.cl_connect() as channel:
     for arg in sys.argv:
         output['arguments'] += arg + ' '
     output['datetime'] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    output['exposure time (us)'] = ns.exposure_time_us
-    output['repeat'] = ns.repeat
+
+    #Get git repo information and append to metadata
+    output['git url'] = subprocess.check_output('git config --get remote.origin.url',shell=True)
+    output['git commit id'] = subprocess.check_output('git rev-parse HEAD',shell=True)
+    output['git last commit date'] = subprocess.check_output("git log -1 --format='%cd'",shell=True)
+
+    for arg_name, arg_value in vars(ns).items():
+        output[arg_name] = arg_value
 
     #Create output data dictionary
     output_data = {}
