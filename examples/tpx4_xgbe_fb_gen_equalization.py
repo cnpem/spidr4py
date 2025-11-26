@@ -186,8 +186,35 @@ with helpers.cl_connect() as channel:
     output['git commit id'] = subprocess.check_output('git rev-parse HEAD',shell=True)
     output['git last commit date'] = subprocess.check_output("git log -1 --format='%cd'",shell=True)
 
+    #Store all arguments to output as they will be saved as hdf5 attributes
     for arg_name, arg_value in vars(ns).items():
         output[arg_name] = arg_value
+
+    #Get Spidr4 and Timepix info
+    # Get the version
+    version = ctrl.GetVersion(rpc.EMPTY)
+    output[version.product]=f"{version.majr}.{version.minr}.{version.patch} (git-info={version.commit_info})"
+
+    fwversion = ctrl.GetFirmwareVersion(rpc.EMPTY)
+    output[fwversion.product]=f"{fwversion.majr}.{fwversion.minr}.{fwversion.patch} (git-info={fwversion.commit_info})"
+
+    serial = ctrl.GetSerial(rpc.EMPTY)
+    output['SPIDR4 serial']=f"{serial.value:016x}"
+
+    carrier = ctrl.GetChipBoardInfo(rpc.EMPTY)
+    output['Carrier Type'] = carrier.type
+    output['Carrier Serial'] = carrier.serial
+
+    chips = ctrl.GetPixelChipInfo(rpc.EMPTY)
+    if len(chips.items) > 1:
+        print(f'ERROR: equalization script does not support boards with {len(chips.items)} chips')
+        sys.exit(1)
+    else:
+        chip = chips.items[0]
+        output['Chip Type'] = rpc.PixelChipType.Name(chip.type)
+        output['Chip Revision'] = chip.revision
+        output['Chip ID'] = f'{chip.chip_id:08x}'
+        print(chip.chip_id)
 
     #Create output data dictionary
     output_data = {}
