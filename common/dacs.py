@@ -230,7 +230,7 @@ class DACs:
           self.setDAC(dac,value=data[dac_mode],debug=self.debug)
         else:
           print(f'ERROR: dac_mode {dac_mode} not found!')
-          sys.exit()
+          sys.exit(1)
 
   def linearize_voltage_dac(self,dac_name,target_value,initial_dac_code):
     #Start to linearize from the initial value
