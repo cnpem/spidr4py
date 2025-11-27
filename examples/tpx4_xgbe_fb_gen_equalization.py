@@ -198,8 +198,8 @@ with helpers.cl_connect() as channel:
     output['SPIDR4 serial']=f"{serial.value:016x}"
 
     carrier = ctrl.GetChipBoardInfo(rpc.EMPTY)
-    output['Carrier Type'] = carrier.type
-    output['Carrier Serial'] = carrier.serial
+    output['Chipboard Type'] = carrier.type
+    output['Chipboard Serial'] = carrier.serial
 
     chips = ctrl.GetPixelChipInfo(rpc.EMPTY)
     if len(chips.items) > 1:
@@ -374,8 +374,19 @@ with helpers.cl_connect() as channel:
     print(f'Total of non-masked pixels: {np.sum(output_data['dac_code_histogram'])}')
 
     # Save equalization and mask bits matrix
-    # TO DO
+    # ------------------------------------------------------------------------------------------------------
+    # Create equalization path dir based on chipboard serial and chip_id
+    output['equalization path'] = os.path.join(os.getcwd(),'config',carrier.serial,f'{chip.chip_id:08x}')
+    os.makedirs(output['equalization path'],exist_ok=True)
 
+    print(f'Saving dac_codes and mask bits files to: {output['equalization path']}')
+    # Save in both directories
+    for dir in [output['equalization path'],output['fullpath']]:
+        np.savetxt(os.path.join(dir,'eq_mask_fb.dat'), output_data['masked_coordinates'] , fmt="%d", header = 'Masked Pixels in (Y,X) format')
+        np.savetxt(os.path.join(dir,'eq_codes_fb.dat'), output_data['equalization_code'] , fmt="%d", header = 'DAC codes equalization (Y=512,X=448) matrix')
+
+    # Save output files
+    # ------------------------------------------------------------------------------------------------------
     print(f'Saving output hdf5: {os.path.join(output['fullpath'],'equalization.hdf5')}')
     # Save images in a .hdf5 file
     with h5py.File(os.path.join(output['fullpath'],'equalization.hdf5'), mode = 'w') as hdf5_file:
