@@ -23,7 +23,7 @@ import h5py
 import sys
 import datetime
 import matplotlib.pyplot as plt
-from argparse import ArgumentTypeError #argparse is used inside helpers
+from matplotlib.colors import LinearSegmentedColormap, BoundaryNorm
 import subprocess
 
 sys.path.insert(0, os.path.join(os.getcwd(),'..'))
@@ -87,13 +87,13 @@ ns = helpers.cl_parse(with_chip_idx=True, args={
     "--xgbe-port": dict(help="10 GbE port", type=int, default=8192),
     '--path':dict(type=str,default='results',help='path to output files'),
     '--testname':dict(type=str,default='equalization',help='test name to create results directory'),
-    '--debug':dict(type=int,choices=range(4),default=1,help='Print debug level. 0: no print, 1: standard, 2: verbose, 3: all messages'),
-    "--exposure-time-us": dict(type=int,default=10,help='Exposure time (shutter time) in microseconds'),
-    '--repeat':dict(required=False,type=int,default=1,help='Number of repetitions per dac step'),
+    '--debug':dict(type=int,choices=range(4),default=0,help='Print debug level. 0: no print, 1: standard, 2: verbose, 3: all messages'),
+    "--exposure-time-us": dict(type=int,default=2000,help='Exposure time (shutter time) in microseconds'),
+    '--repeat':dict(required=False,type=int,default=5,help='Number of repetitions per dac step'),
     '--dac-mode': dict(help='Select DAC mode to be loaded', default = 'fb_default', type=str),
-    '--th-hot-e':dict(type=int,default=2000,help='Threshold to look for hot pixels in e-'),
-    '--exposure-time-hot-us':dict(type=int,default=1e6,help='Exposure time to look for hot pixels in microseconds'),
-    '--repeat-hot':dict(required=False,type=int,default=10,help='Number of image repetitions for hot pixels search')
+    '--th-hot-e':dict(type=int,default=1000,help='Threshold to look for hot pixels in e-'),
+    '--exposure-time-hot-us':dict(type=int,default=5e3,help='Exposure time to look for hot pixels in microseconds'),
+    '--repeat-hot':dict(required=False,type=int,default=20,help='Number of image repetitions for hot pixels search')
 })
 
 #Create an output log file
@@ -272,27 +272,21 @@ with helpers.cl_connect() as channel:
     #wait the current frame (last shutter) to finish
     start_event_top.wait()
     start_event_bot.wait()
-    #Send signal to stop read threads after the current frame
-    stop_event.set()
 
     status = trigger.GetStatus(rpc.EMPTY)           # get trigger status
     print(f"Shutter total count: {status.shutter_counter}")
 
     print(f'Valid frames: {valid_frames}')
 
-    #wait threads to finish
-    capture_thread_top.join()
-    capture_thread_bot.join()
-
     # Concatenate botton and top matrixes to construct full images, considering valid frames
-    images = []
+    output_data['equalization images'] = []
     for i in valid_frames:
-        images.append(np.concatenate((decoder_bot.frames[i], np.rot90(decoder_top.frames[i], 2)), axis = 0))
+        output_data['equalization images'].append(np.concatenate((decoder_bot.frames[i], np.rot90(decoder_top.frames[i], 2)), axis = 0))
 
     # Normalize the dac step repeated images
     normalized_images = []
     for i in output_data['dac_codes']:
-        normalized_images.append(np.sum(images[i*ns.repeat:(i+1)*ns.repeat],axis=0)/ns.repeat)
+        normalized_images.append(np.sum(output_data['equalization images'][i*ns.repeat:(i+1)*ns.repeat],axis=0)/ns.repeat)
 
     # Create auxiliary matrix to obtain the best equalization codes
 
@@ -304,8 +298,8 @@ with helpers.cl_connect() as channel:
     output_data['equalization_code'].fill(-1) #Fill with -1 to identify pixels to be masked
 
     # Matrix of masked pixels
-    output_data['masked']=np.zeros(shape=(ARRAY_SIZE_Y,ARRAY_SIZE_X), dtype='int')
-    output_data['dead_pixels']=np.zeros(shape=(ARRAY_SIZE_Y,ARRAY_SIZE_X), dtype='int')
+    output_data['masked']=np.zeros(shape=(ARRAY_SIZE_Y,ARRAY_SIZE_X), dtype=bool)
+    output_data['dead_pixels']=np.zeros(shape=(ARRAY_SIZE_Y,ARRAY_SIZE_X), dtype=bool)
 
     # Find dac_code that maximizes noise
     for dac_code in output_data['dac_codes']:
@@ -327,6 +321,7 @@ with helpers.cl_connect() as channel:
     #Search for hot pixels
     # ------------------------------------------------------------------------------------------------------
     #Load equalization
+    print('Fill equalization matrix')
     for X in range(0,ARRAY_SIZE_X,1):
         for Y in range(0,ARRAY_SIZE_Y,1):
             pixel_cfg_mtx[Y][X] = tpx4tools.PixelConfig(dac=output_data['equalization_code'][Y][X], power_enable=not(output_data['dead_pixels'][Y][X]), tp_enable=False, mask=output_data['dead_pixels'][Y][X]).word
@@ -334,6 +329,18 @@ with helpers.cl_connect() as channel:
     #Serialize pixel config data
     config_blob = tpx4tools.logic2chip_cfg_matrix(pixel_cfg_mtx)
 
+    #WARNING: it has been found that send equalization to the chip during readout causes a bug, this can be a Spidr4
+    #   fw issue, but still need to be investigated
+    # ------------------------------------------------------------------------------------------------------
+    #clear start flags
+    start_event_top.clear()
+    start_event_bot.clear()
+    #wait the current frame to finish
+    start_event_top.wait()
+    start_event_bot.wait()
+    # ------------------------------------------------------------------------------------------------------
+
+    print('Loading equalization to the chip')
     #Send pixel configuration to the ASIC
     tpx4.ConfigPixels(
             rpc.Tpx4PixelConfig(
@@ -342,16 +349,74 @@ with helpers.cl_connect() as channel:
             )
     )
 
-    #Create hot pixels matrix and counter
-    output_data['hot_pixels']=np.zeros(shape=(ARRAY_SIZE_Y,ARRAY_SIZE_X), dtype='int')
-    output['hot pixels number'] = 0
-
+    print(f'Configure threshold to {ns.th_hot_e} e-.')
     # Configure threshold in e. Polarity = 0 means electrons collection
     dacs.conf_threshold(THR_e=ns.th_hot_e,debug=True)
 
-    # TO DO
+    print('Reconfigure Spidr4 shutter')
+    #Configure shutter
+    trigger.StopAutoShutter(rpc.EMPTY)              # Just in case it was still running
+    # Configure Trigger
+    # ------------------------------------------------------------------------------------------------------
+    trigger.SetConfig(
+        rpc.TriggerConfig(
+            shutter_input=rpc.SHUTTER_IN_AUTO_GEN,
+            t0_input=rpc.T0SYNC_IN_SOFTWARE,
+            #Works only with SHUTTER_IN_AUTO_GEN or SHUTTER_IN_AUTO_GEN_EXT_START
+            auto_shutter_open_us=ns.exposure_time_hot_us,
+            auto_shutter_close_us=500000-ns.exposure_time_hot_us, #Configured as CRW wait time to avois arbitrador bug
+            shutter_count=ns.repeat_hot,
+            ####################################################################################
+        )
+    )
+    trigger.ResetShutterCounter(rpc.EMPTY)          # Reset shutter counter
+
+    print('Starting hot pixel search.')
+
+    #Get current frame as the first one valid
+    with lock:
+        first_frame_hot_search = current_frame
+
+    #send the shutter
+    trigger.StartAutoShutter(rpc.EMPTY)             # Start auto-shutter
+    status = trigger.GetStatus(rpc.EMPTY)           # get trigger status
+    last_shutter = status.shutter_counter
+    while status.auto_shutter_busy:
+        time.sleep(0.1)
+        status = trigger.GetStatus(rpc.EMPTY)       # Get the current status
+        if status.shutter_counter != last_shutter:
+            print(f'Hot pixel search. Exposure {ns.exposure_time_hot_us} us. {status.shutter_counter} shutter of {ns.repeat_hot} images')
+            last_shutter = status.shutter_counter
+
+    #Get last frame
+    with lock:
+        last_frame_hot_search = current_frame + 1
+
+    #clear start flags
+    start_event_top.clear()
+    start_event_bot.clear()
+    #wait the current frame (last shutter) to finish
+    start_event_top.wait()
+    start_event_bot.wait()
+
+    #Send signal to stop read threads after the current frame
+    stop_event.set()
+
+    #wait threads to finish
+    capture_thread_top.join()
+    capture_thread_bot.join()
+
+    # Concatenate bottom and top matrixes to construct full images, considering valid frames
+    output_data['images hot search'] = []
+    for i in range(first_frame_hot_search,last_frame_hot_search+1):
+        output_data['images hot search'].append(np.concatenate((decoder_bot.frames[i], np.rot90(decoder_top.frames[i], 2)), axis = 0))
+
+    #Create hot pixels matrix and counter
+    output_data['hot_pixels']=np.sum(output_data['images hot search'],axis=0)>0
+    output['hot pixels number'] = np.sum(output_data['hot_pixels'])
 
     #Compute mask pixels as dead or hot pixels
+    # ------------------------------------------------------------------------------------------------------
     output_data['masked'] = np.logical_or(output_data['dead_pixels'],output_data['hot_pixels'])
 
     output_data['masked_coordinates']=np.argwhere(output_data['masked']>0)
@@ -390,7 +455,6 @@ with helpers.cl_connect() as channel:
     print(f'Saving output hdf5: {os.path.join(output['fullpath'],'equalization.hdf5')}')
     # Save images in a .hdf5 file
     with h5py.File(os.path.join(output['fullpath'],'equalization.hdf5'), mode = 'w') as hdf5_file:
-        hdf5_file.create_dataset('/entry/data/data', data = images)
         for key in output.keys():
             hdf5_file.attrs[key] = output[key]
         for key in output_data.keys():
@@ -409,7 +473,12 @@ with helpers.cl_connect() as channel:
 
     #Plot masked pixels matrix
     plt.figure()
-    plt.imshow(output_data['masked'],origin='lower')
-    plt.title(f'{output['Number of masked']} masked pixels matrix. {output['Percentual masked']:.2f} %')
+    # Define colors for different ranges (blue for healthy pixels, yellow for dead and red for hot)
+    cmap = LinearSegmentedColormap.from_list("my_cmap", ['blue', 'yellow', 'red'])
+    norm = BoundaryNorm([0, 1, 2, 3], cmap.N)
+    plt.imshow(2*output_data['hot_pixels']+output_data['dead_pixels'],origin='lower',cmap=cmap, norm=norm)
+    plt.title(f'{output['Number of masked']} masked pixels matrix. {output['Percentual masked']:.2f} %\n{output['dead pixels number']} dead and {output['hot pixels number']} hot pixels')
+    cbar = plt.colorbar()
+    cbar.ax.set_yticks([0.5, 1.5, 2.5],labels=['Normal Pixels','Dead Pixels','Hot Pixels'])
     plt.savefig(os.path.join(output['fullpath'],'masked_pixels.png'))
     plt.show()
