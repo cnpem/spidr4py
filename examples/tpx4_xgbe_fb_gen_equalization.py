@@ -95,7 +95,8 @@ ns = helpers.cl_parse(with_chip_idx=True, args={
     '--dac-mode': dict(help='Select DAC mode to be loaded', default = 'fb_default', type=str),
     '--th-hot-e':dict(type=int,default=1000,help='Threshold to look for hot pixels in e-'),
     '--exposure-time-hot-us':dict(type=int,default=5e3,help='Exposure time to look for hot pixels in microseconds'),
-    '--repeat-hot':dict(required=False,type=int,default=20,help='Number of image repetitions for hot pixels search')
+    '--repeat-hot':dict(required=False,type=int,default=20,help='Number of image repetitions for hot pixels search'),
+    '--hot-counts-limit':dict(type=int,default=10,help='Hot pixels count limit'),
 })
 
 #Create an output log file
@@ -413,7 +414,7 @@ with helpers.cl_connect() as channel:
         output_data['images hot search'].append(np.concatenate((decoder_bot.frames[i], np.rot90(decoder_top.frames[i], 2)), axis = 0))
 
     #Create hot pixels matrix and counter
-    output_data['hot_pixels']=np.sum(output_data['images hot search'],axis=0)>0
+    output_data['hot_pixels']=np.sum(output_data['images hot search'],axis=0)>ns.hot_counts_limit
     output['hot pixels number'] = np.sum(output_data['hot_pixels'])
 
     #Compute mask pixels as dead or hot pixels
