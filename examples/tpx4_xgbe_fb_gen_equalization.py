@@ -90,6 +90,8 @@ ns = helpers.cl_parse(with_chip_idx=True, args={
     '--debug':dict(type=int,choices=range(4),default=0,help='Print debug level. 0: no print, 1: standard, 2: verbose, 3: all messages'),
     "--exposure-time-us": dict(type=int,default=2000,help='Exposure time (shutter time) in microseconds'),
     '--repeat':dict(required=False,type=int,default=5,help='Number of repetitions per dac step'),
+    '--polarity': dict(choices=['h','e'],default='e',help='Charge collection'),
+    '--gain': dict(choices=['low','high'],default='high',help='CSA gain'),
     '--dac-mode': dict(help='Select DAC mode to be loaded', default = 'fb_default', type=str),
     '--th-hot-e':dict(type=int,default=1000,help='Threshold to look for hot pixels in e-'),
     '--exposure-time-hot-us':dict(type=int,default=5e3,help='Exposure time to look for hot pixels in microseconds'),
@@ -121,8 +123,8 @@ os.makedirs(output['fullpath'],exist_ok=True)
 #Call frame based configuration script resetting the chip
 ans = os.system(f"python3 tpx4_fb_config_fast.py {ns.iface} --host {ns.host} \
     --port {ns.port} --chip-idx {ns.chip_idx} --no-ffly-mode --xgbe-port {ns.xgbe_port} \
-    --crw-time-us 500000 --counter 16bit --reset --th_e 0 --gain high --no-status-packets \
-    --polarity e --dac-mode {ns.dac_mode}")
+    --crw-time-us 500000 --counter 16bit --reset --th_e 0 --gain {ns.gain} --no-status-packets \
+    --polarity {ns.polarity} --dac-mode {ns.dac_mode}")
 
 if ans != 0:
     print(f'ERROR: running tpx4_fb_config_fast.py: {ans}')
@@ -350,7 +352,6 @@ with helpers.cl_connect() as channel:
     )
 
     print(f'Configure threshold to {ns.th_hot_e} e-.')
-    # Configure threshold in e. Polarity = 0 means electrons collection
     dacs.conf_threshold(THR_e=ns.th_hot_e,debug=True)
 
     print('Reconfigure Spidr4 shutter')
