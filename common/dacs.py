@@ -232,6 +232,41 @@ class DACs:
           print(f'ERROR: dac_mode {dac_mode} not found!')
           sys.exit()
 
+  def linearize_voltage_dac(self,dac_name,target_value,initial_dac_code):
+    #Start to linearize from the initial value
+    dac_code = initial_dac_code
+    loop_counter = 0
+
+    #Iterate within a maximum number given by LOOP_MAX_ITERATIONS
+    while loop_counter < LOOP_MAX_ITERATIONS:
+      #Read the current DAC value
+      feedback = self.readDAC(dac_name,debug=False)
+
+      #Compute the error from the target, decide if we need to move up or down
+      error = feedback - target_value
+      delta_dac_code = -1 if error>0 else 1
+
+      #Calculate the next dac_code step
+      dac_code = dac_code + delta_dac_code
+
+      #Set the DAC, read the new feedback and compute the new error
+      self.tpx4.SetDacs(rpc.DacValueList(idx=self.chip_index,items=[rpc.DacValue(dac=dacs_lib[dac_name]['DAC'], value=dac_code)]))
+      new_feedback = self.readDAC(dac_name,debug=False)
+      new_error = new_feedback - target_value
+
+      #if errors are in different polarity they crossed the best value - so this one or the previous are the best choice
+      if (error*new_error) < 0:
+        #If the new one is worse, return to the previous dac step
+        if abs(new_error) > abs(error):
+          dac_code = dac_code - delta_dac_code
+          self.tpx4.SetDacs(rpc.DacValueList(idx=self.chip_index,items=[rpc.DacValue(dac=dacs_lib[dac_name]['DAC'], value=dac_code)]))
+        #Get the current feedback and break the while loop
+        feedback = self.readDAC(dac_name,debug=False)
+        break
+      loop_counter +=1
+    #Return the loop counter, the last feedback value and the final dac_code
+    return loop_counter,feedback,dac_code
+
   def setDAC(self,dac_name,value,debug=True):
     if dac_name in dacs_lib.keys():
       if dacs_lib[dac_name]['bits'] == 8:
@@ -239,29 +274,13 @@ class DACs:
         dac_code = round(value/resolution_V)&0xFF
         # Write DAC value
         self.tpx4.SetDacs(rpc.DacValueList(idx=self.chip_index,items=[rpc.DacValue(dac=dacs_lib[dac_name]['DAC'], value=dac_code)]))
+        feedback = self.readDAC(dac_name,debug=False)
         if debug: print(f'Write DAC {dac_name}: {value:.3g} V. Initial DAC code: 0x{dac_code:02X}')
 
         #Iterate to find best value for voltage DACs
         if dacs_lib[dac_name]['unit'] == 'V':
-          loop_counter = 0
-          while loop_counter < LOOP_MAX_ITERATIONS:
-            feedback = self.readDAC(dac_name,debug=False)
-            error = feedback - value
-            delta_dac_code = -1 if error>0 else 1
-            dac_code = (dac_code + delta_dac_code)&0xFF
-            self.tpx4.SetDacs(rpc.DacValueList(idx=self.chip_index,items=[rpc.DacValue(dac=dacs_lib[dac_name]['DAC'], value=dac_code)]))
-            new_feedback = self.readDAC(dac_name,debug=False)
-            new_error = new_feedback - value
-            #if errors are in different polarity they crossed the best value - so this one or the previous are one of the best
-            if (error*new_error) < 0:
-              if abs(new_error) > abs(error):
-                #return to the last dac_code
-                #print(f'Return {dac_code} to the previous dac_code {(dac_code - delta_dac_code)&0xFF}')
-                dac_code = (dac_code - delta_dac_code)&0xFF
-                self.tpx4.SetDacs(rpc.DacValueList(idx=self.chip_index,items=[rpc.DacValue(dac=dacs_lib[dac_name]['DAC'], value=dac_code)]))
-              feedback = self.readDAC(dac_name,debug=False)
-              break
-            loop_counter +=1
+          loop_counter,feedback,dac_code = self.linearize_voltage_dac(dac_name,value,dac_code)
+
           if debug: print(f'Optimized DAC {dac_name} to: {value:.5f} V with {loop_counter} iterations. DAC code: 0x{dac_code:04X} and readback value: {feedback:.5f} ')
 
       elif dacs_lib[dac_name]['bits'] == 14:
@@ -294,30 +313,12 @@ class DACs:
 
         # Write DAC value
         self.tpx4.SetDacs(rpc.DacValueList(idx=self.chip_index,items=[rpc.DacValue(dac=dacs_lib[dac_name]['DAC'], value=dac_code)]))
+        feedback = self.readDAC(dac_name,debug=False)
         if debug: print(f'Write DAC {dac_name}: {value:.3g} V. Initial DAC code: 0x{dac_code:04X}')
 
         #Iterate to find best value for voltage DACs
         if dacs_lib[dac_name]['unit'] == 'V':
-          loop_counter = 0
-          while loop_counter < LOOP_MAX_ITERATIONS:
-            feedback = self.readDAC(dac_name,debug=False)
-            error = feedback - value
-            delta_dac_code = -1 if error>0 else 1
-            fine_adj = (fine_adj + delta_dac_code)&0x3FF
-            dac_code = coarse << 10 | fine_adj
-            self.tpx4.SetDacs(rpc.DacValueList(idx=self.chip_index,items=[rpc.DacValue(dac=dacs_lib[dac_name]['DAC'], value=dac_code)]))
-            new_feedback = self.readDAC(dac_name,debug=False)
-            new_error = new_feedback - value
-            #if errors are in different polarity they crossed the best value - so this one or the previous are one of the best
-            if (error*new_error) < 0:
-              if abs(new_error) > abs(error):
-                #return to the last dac_code
-                fine_adj = (fine_adj - delta_dac_code)&0x3FF
-                dac_code = coarse << 10 | fine_adj
-                self.tpx4.SetDacs(rpc.DacValueList(idx=self.chip_index,items=[rpc.DacValue(dac=dacs_lib[dac_name]['DAC'], value=dac_code)]))
-              feedback = self.readDAC(dac_name,debug=False)
-              break
-            loop_counter +=1
+          loop_counter,feedback,dac_code = self.linearize_voltage_dac(dac_name,value,dac_code)
           if debug: print(f'Optimized DAC {dac_name} to: {value:.5f} V with {loop_counter} iterations. DAC code: 0x{dac_code:04X} and readback value: {feedback:.5f} ')
 
       else:
