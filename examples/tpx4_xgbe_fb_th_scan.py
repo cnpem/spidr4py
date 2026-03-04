@@ -3,10 +3,10 @@
 #############################################################################################################
 #
 #  tpx4_xgbe_fb_th_scan.py
-#  
+#
 #  Performs frame-based threshold scan using 10G interface.
 #
-#  Authors: 
+#  Authors:
 #   Mauricio Donatti <mauricio.donatti@lnls.br>
 #
 #  September 2025
@@ -192,7 +192,7 @@ with helpers.cl_connect() as channel:
     for index,th in enumerate(output_data['threshold_target']):
         # Configure threshold in e. Polarity = 0 means electrons collection
         print('-----------------------------------------------------------')
-        output_data['threshold_readback'].append(dacs.conf_threshold(THR_e=th,debug=True))
+        output_data['threshold_readback'].append(dacs.conf_threshold(THR_e=th,force_FBK=False,debug=True))
 
         for i in range(ns.repeat):
 
