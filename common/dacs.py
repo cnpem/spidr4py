@@ -3,7 +3,7 @@
 #############################################################################################################
 #
 #  dacs.py
-#  
+#
 #  A DAC class to configure Timepix4 DACs
 #
 #  For more information about Timepix4 DACS see: https://timepix4.web.cern.ch/timepix4/timepix4/ChipDescription/AnalogFrontEnd.html#digital-to-analog-converters
@@ -300,7 +300,7 @@ class DACs:
     else:
       print(f'ERROR: dac {dac_name} not in dac list. Cannot write')
       raise SystemExit
-  
+
   def readDAC(self,dac_name,debug=True):
     if dac_name in dacs_lib.keys():
       #Read DAC value
@@ -314,6 +314,7 @@ class DACs:
   def conf_threshold(self,
                   THR_e=1000,
                   FBK_V=None,
+                  force_FBK=True,
                   debug=True):
 
     # Nominal calculation of gain does not represent the real gain, Timepix4 CSA parasitic capacitance is around 1.7fF
@@ -331,7 +332,11 @@ class DACs:
 
     THR_FBK_V=THR_e*Gain_Ve
 
-    rb_fbk = self.setDAC('VFBK',value=FBK_V,debug=debug)
+    #Force FBK or only readback the value
+    if force_FBK:
+      rb_fbk = self.setDAC('VFBK',value=FBK_V,debug=debug)
+    else:
+      rb_fbk = self.readDAC('VFBK',debug=debug)
 
     THR_V = (FBK_V - THR_FBK_V) if self.hole_polarity else (FBK_V + THR_FBK_V)
 
