@@ -83,6 +83,12 @@ def async_capture(port,decoder,stop_event,new_frame_event):
     # Stop and clean the current thread
     prt.stop()
 
+def int_greater_1(x):
+    x = int(x) # Convert to int
+    if x < 2:
+        raise ArgumentTypeError(f"{x} must be an integer >= 2")
+    return x
+
 # -----------------------------------------------------------------------------------------------------------
 #Create argparse parameters
 ns = helpers.cl_parse(with_chip_idx=True, args={
@@ -94,7 +100,7 @@ ns = helpers.cl_parse(with_chip_idx=True, args={
     "--exposure-time-us": dict(type=int,default=10,help='Exposure time (shutter time) in microseconds'),
     '--th_low_e':dict(type=int,default=0,help='Threshold low in e-'),
     '--th_high_e':dict(type=int,required=True,help='Threshold high in e-'),
-    '--n_points':dict(required=True,type=int,default=1,help='Number of threshold samples'),
+    '--n_points':dict(required=False,type=int_greater_1,default=2,help='Number of threshold samples'),
     '--repeat':dict(required=False,type=int,default=1,help='Number of repetitions per threshold sample')
 
 })
