@@ -279,9 +279,15 @@ with helpers.cl_connect() as channel:
         for key in output_data.keys():
             hdf5_file.create_dataset(f'/entry/data/{key}', data = output_data[key])
 
+    #Sort threshold readback array and counts accordingly to the readback threshold
+    output_data['threshold_readback'] = np.array(output_data['threshold_readback'])
+    output_data['sum_per_threshold'] = np.array(output_data['sum_per_threshold'])
+    th_readback_sorted = output_data['threshold_readback'][np.argsort(output_data['threshold_readback'])]
+    sum_sorted = output_data['sum_per_threshold'][np.argsort(output_data['threshold_readback'])]
+
     #Plot the figure
     plt.figure()
-    plt.plot(output_data['threshold_target'],output_data['sum_per_threshold'])
+    plt.plot(th_readback_sorted,sum_sorted,'-o')
     plt.title(f'Threshold Scan - {ns.exposure_time_us} us exposure')
     plt.xlabel('Threshold (e)')
     plt.ylabel('Counts Sum')
