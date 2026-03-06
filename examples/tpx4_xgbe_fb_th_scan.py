@@ -3,10 +3,10 @@
 #############################################################################################################
 #
 #  tpx4_xgbe_fb_th_scan.py
-#  
+#
 #  Performs frame-based threshold scan using 10G interface.
 #
-#  Authors: 
+#  Authors:
 #   Mauricio Donatti <mauricio.donatti@lnls.br>
 #
 #  September 2025
@@ -24,6 +24,7 @@ import sys
 import datetime
 import matplotlib.pyplot as plt
 from argparse import ArgumentTypeError #argparse is used inside helpers
+import subprocess
 
 sys.path.insert(0, os.path.join(os.getcwd(),'..'))
 
@@ -83,21 +84,37 @@ def async_capture(port,decoder,stop_event,new_frame_event):
     # Stop and clean the current thread
     prt.stop()
 
+def int_greater_1(x):
+    x = int(x) # Convert to int
+    if x < 2:
+        raise ArgumentTypeError(f"{x} must be an integer >= 2")
+    return x
+
 # -----------------------------------------------------------------------------------------------------------
 #Create argparse parameters
 ns = helpers.cl_parse(with_chip_idx=True, args={
     "iface": dict(help="Network interface", type=str),
     "--xgbe-port": dict(help="10 GbE port", type=int, default=8192),
-    '--path':dict(type=dir_path,required=True,help='path to output files'),
-    '--filename':dict(type=str,default='th_scan',help='test name to be appended to output filename'),
+    '--path':dict(type=dir_path,default='results',help='path to output files'),
+    '--testname':dict(type=str,default='th-scan',help='test name to be create results dir'),
     '--debug':dict(type=int,choices=range(4),default=1,help='Print debug level. 0: no print, 1: standard, 2: verbose, 3: all messages'),
     "--exposure-time-us": dict(type=int,default=10,help='Exposure time (shutter time) in microseconds'),
     '--th_low_e':dict(type=int,default=0,help='Threshold low in e-'),
     '--th_high_e':dict(type=int,required=True,help='Threshold high in e-'),
-    '--n_points':dict(required=True,type=int,default=1,help='Number of threshold samples'),
+    '--n_points':dict(required=False,type=int_greater_1,default=2,help='Number of threshold samples'),
     '--repeat':dict(required=False,type=int,default=1,help='Number of repetitions per threshold sample')
 
 })
+
+TH_STEP_MAX = 80
+th_step = (ns.th_high_e - ns.th_low_e)/(ns.n_points-1)
+if th_step < TH_STEP_MAX:
+    print(f'WARNING: Threshold step is {th_step:.2f} electrons. Please consider to proceed with a step larger than {TH_STEP_MAX} electrons.')
+    res = input('Do you wish to continue? (y or n)\n\r')
+    if res in ['y','Y','Yes','yes']:
+        pass
+    else:
+        sys.exit(1)
 
 # # Main loop, create network connection
 with helpers.cl_connect() as channel:
@@ -173,12 +190,20 @@ with helpers.cl_connect() as channel:
     output['arguments'] = ''
     for arg in sys.argv:
         output['arguments'] += arg + ' '
-    output['datetime'] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    output['exposure time (us)'] = ns.exposure_time_us
-    output['n points'] = ns.n_points
-    output['repeat'] = ns.repeat
-    output['threshold low (e)'] = ns.th_low_e
-    output['threshold high (e)'] = ns.th_high_e
+    output['datetime'] = datetime.datetime.now().strftime("%Y-%m-%d_%Hh%Mm%Ss")
+
+    #Get git repo information and append to metadata
+    output['git url'] = subprocess.check_output('git config --get remote.origin.url',shell=True)
+    output['git commit id'] = subprocess.check_output('git rev-parse HEAD',shell=True)
+    output['git last commit date'] = subprocess.check_output("git log -1 --format='%cd'",shell=True)
+
+    #Store all arguments to output as they will be saved as hdf5 attributes
+    for arg_name, arg_value in vars(ns).items():
+        output[arg_name] = arg_value
+
+    #Create expected directories
+    output['fullpath'] = os.path.join(os.getcwd(),ns.path,f'{output['datetime']}_{ns.testname}')
+    os.makedirs(output['fullpath'],exist_ok=True)
 
     #Create output data dictionary
     output_data = {}
@@ -192,7 +217,7 @@ with helpers.cl_connect() as channel:
     for index,th in enumerate(output_data['threshold_target']):
         # Configure threshold in e. Polarity = 0 means electrons collection
         print('-----------------------------------------------------------')
-        output_data['threshold_readback'].append(dacs.conf_threshold(THR_e=th,debug=True))
+        output_data['threshold_readback'].append(dacs.conf_threshold(THR_e=th,force_FBK=False,debug=True))
 
         for i in range(ns.repeat):
 
@@ -254,22 +279,30 @@ with helpers.cl_connect() as channel:
         output_data['max_per_threshold'].append(np.max(counter_max[i*ns.repeat:(i+1)*ns.repeat]))
         output_data['mean_per_threshold'].append(np.mean(counter_mean[i*ns.repeat:(i+1)*ns.repeat]))
 
-    print(f'Saving output image: {os.path.join(ns.path,f'{ns.filename}.hdf5')}')
+    # Save output files
+    # ------------------------------------------------------------------------------------------------------
+    print(f'Saving output hdf5: {os.path.join(output['fullpath'],'th-scan.hdf5')}')
     # Save images in a .hdf5 file
-    with h5py.File(os.path.join(ns.path,f'{ns.filename}.hdf5'), mode = 'w') as hdf5_file:
+    with h5py.File(os.path.join(output['fullpath'],'th-scan.hdf5'), mode = 'w') as hdf5_file:
         hdf5_file.create_dataset('/entry/data/data', data = images)
         for key in output.keys():
             hdf5_file.attrs[key] = output[key]
         for key in output_data.keys():
             hdf5_file.create_dataset(f'/entry/data/{key}', data = output_data[key])
 
+    #Sort threshold readback array and counts accordingly to the readback threshold
+    output_data['threshold_readback'] = np.array(output_data['threshold_readback'])
+    output_data['sum_per_threshold'] = np.array(output_data['sum_per_threshold'])
+    th_readback_sorted = output_data['threshold_readback'][np.argsort(output_data['threshold_readback'])]
+    sum_sorted = output_data['sum_per_threshold'][np.argsort(output_data['threshold_readback'])]
+
     #Plot the figure
     plt.figure()
-    plt.plot(output_data['threshold_target'],output_data['sum_per_threshold'])
+    plt.plot(th_readback_sorted,sum_sorted,'-o')
     plt.title(f'Threshold Scan - {ns.exposure_time_us} us exposure')
     plt.xlabel('Threshold (e)')
     plt.ylabel('Counts Sum')
     plt.grid()
     plt.tight_layout()
-    plt.savefig(os.path.join(ns.path,f'{ns.filename}.png'))
+    plt.savefig(os.path.join(output['fullpath'],'th-scan.png'))
     plt.show()

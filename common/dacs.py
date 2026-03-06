@@ -3,7 +3,7 @@
 #############################################################################################################
 #
 #  dacs.py
-#  
+#
 #  A DAC class to configure Timepix4 DACs
 #
 #  For more information about Timepix4 DACS see: https://timepix4.web.cern.ch/timepix4/timepix4/ChipDescription/AnalogFrontEnd.html#digital-to-analog-converters
@@ -18,9 +18,7 @@
 from spidr4 import rpc
 import sys
 
-LOOP_MAX_ITERATIONS = 100
-VOLTAGE_TOLERANCE_8B = 1e-3
-VOLTAGE_TOLERANCE_10B = 500e-6
+LOOP_MAX_ITERATIONS = 200
 
 #Create a dac library
 #Based on Table 3.2: https://timepix4.web.cern.ch/timepix4/timepix4/ChipDescription/AnalogFrontEnd.html#digital-to-analog-converters
@@ -234,6 +232,41 @@ class DACs:
           print(f'ERROR: dac_mode {dac_mode} not found!')
           sys.exit()
 
+  def linearize_voltage_dac(self,dac_name,target_value,initial_dac_code):
+    #Start to linearize from the initial value
+    dac_code = initial_dac_code
+    loop_counter = 0
+
+    #Iterate within a maximum number given by LOOP_MAX_ITERATIONS
+    while loop_counter < LOOP_MAX_ITERATIONS:
+      #Read the current DAC value
+      feedback = self.readDAC(dac_name,debug=False)
+
+      #Compute the error from the target, decide if we need to move up or down
+      error = feedback - target_value
+      delta_dac_code = -1 if error>0 else 1
+
+      #Calculate the next dac_code step
+      dac_code = dac_code + delta_dac_code
+
+      #Set the DAC, read the new feedback and compute the new error
+      self.tpx4.SetDacs(rpc.DacValueList(idx=self.chip_index,items=[rpc.DacValue(dac=dacs_lib[dac_name]['DAC'], value=dac_code)]))
+      new_feedback = self.readDAC(dac_name,debug=False)
+      new_error = new_feedback - target_value
+
+      #if errors are in different polarity they crossed the best value - so this one or the previous are the best choice
+      if (error*new_error) < 0:
+        #If the new one is worse, return to the previous dac step
+        if abs(new_error) > abs(error):
+          dac_code = dac_code - delta_dac_code
+          self.tpx4.SetDacs(rpc.DacValueList(idx=self.chip_index,items=[rpc.DacValue(dac=dacs_lib[dac_name]['DAC'], value=dac_code)]))
+        #Get the current feedback and break the while loop
+        feedback = self.readDAC(dac_name,debug=False)
+        break
+      loop_counter +=1
+    #Return the loop counter, the last feedback value and the final dac_code
+    return loop_counter,feedback,dac_code
+
   def setDAC(self,dac_name,value,debug=True):
     if dac_name in dacs_lib.keys():
       if dacs_lib[dac_name]['bits'] == 8:
@@ -241,54 +274,51 @@ class DACs:
         dac_code = round(value/resolution_V)&0xFF
         # Write DAC value
         self.tpx4.SetDacs(rpc.DacValueList(idx=self.chip_index,items=[rpc.DacValue(dac=dacs_lib[dac_name]['DAC'], value=dac_code)]))
-        if debug: print(f'Write DAC {dac_name}: {value:.3g} V. Initial DAC code: 0x{dac_code:02X}')
         feedback = self.readDAC(dac_name,debug=False)
+        if debug: print(f'Write DAC {dac_name}: {value:.3g} V. Initial DAC code: 0x{dac_code:02X}')
 
         #Iterate to find best value for voltage DACs
         if dacs_lib[dac_name]['unit'] == 'V':
-          loop_counter=0
-          delta_dac_code = round((value-feedback)/resolution_V)
-          while abs(value - feedback) >= VOLTAGE_TOLERANCE_8B and loop_counter < LOOP_MAX_ITERATIONS and delta_dac_code != 0:
-            delta_dac_code = round((value-feedback)/resolution_V)
-            dac_code = (dac_code + delta_dac_code)&0xFF
-            self.tpx4.SetDacs(rpc.DacValueList(idx=self.chip_index,items=[rpc.DacValue(dac=dacs_lib[dac_name]['DAC'], value=dac_code)]))
-            feedback = self.readDAC(dac_name,debug=False)
-            loop_counter +=1
-          if debug: print(f'Optimized DAC {dac_name} to: {value:.5f} V with {loop_counter} iterations. DAC code: 0x{dac_code:02X} and readback value: {feedback:.5f} ')
+          loop_counter,feedback,dac_code = self.linearize_voltage_dac(dac_name,value,dac_code)
+
+          if debug: print(f'Optimized DAC {dac_name} to: {value:.5f} V with {loop_counter} iterations. DAC code: 0x{dac_code:04X} and readback value: {feedback:.5f} ')
 
       elif dacs_lib[dac_name]['bits'] == 14:
 
         #fullrange is around 500mV per coarse adjustment
         #resolution is 10 bits
-        resolution_V = 500e-3/(2**10)
         #we can choose three coarse regions to work, based on DAC VTHRESHOLD scan analysis, as the first iteration point
-        if value <= 400e-3:
-          coarse = 0 #from 0 to 500mV
-          fine_adj = round(value/resolution_V)
-        elif value <= 800e-3:
-          coarse = 4 #from 350mV to 850mV
-          fine_adj = round((value-350e-3)/resolution_V)
+        LIN_RANGE_1 = 400e-3
+        LIN_RANGE_2 = 800e-3
+        if value <= LIN_RANGE_1:
+          #Specific for second coarse range
+          coarse = 2 #from 0 to LIN_RANGE_1
+          V_START = 0
+          V_END = 0.63
+          resolution_V = (V_END - V_START)/(2**10)
+          fine_adj = round((value-V_START)/resolution_V)
+        elif value <= LIN_RANGE_2:
+          coarse = 5 #from LIN_RANGE_1 to LIN_RANGE_2
+          V_START = 0.34
+          V_END = 0.89
+          resolution_V = (V_END - V_START)/(2**10)
+          fine_adj = round((value-V_START)/resolution_V)
         else:
-          coarse = 9 #from 650mV to saturation (1.150V)
-          fine_adj = round((value-650e-3)/resolution_V)
+          coarse = 8 #from LIN_RANGE_2 to saturation (1.150V)
+          V_START = 0.59
+          V_END = 1.15
+          resolution_V = (V_END - V_START)/(2**10)
+          fine_adj = round((value-V_START)/resolution_V)
         dac_code = coarse << 10 | fine_adj
 
         # Write DAC value
         self.tpx4.SetDacs(rpc.DacValueList(idx=self.chip_index,items=[rpc.DacValue(dac=dacs_lib[dac_name]['DAC'], value=dac_code)]))
+        feedback = self.readDAC(dac_name,debug=False)
         if debug: print(f'Write DAC {dac_name}: {value:.3g} V. Initial DAC code: 0x{dac_code:04X}')
 
         #Iterate to find best value for voltage DACs
         if dacs_lib[dac_name]['unit'] == 'V':
-          feedback = self.readDAC(dac_name,debug=False)
-          loop_counter=0
-          delta_dac_code = round((value-feedback)/resolution_V)
-          while abs(value - feedback) >= VOLTAGE_TOLERANCE_10B and loop_counter < LOOP_MAX_ITERATIONS and delta_dac_code != 0:
-            delta_dac_code = round((value-feedback)/resolution_V)
-            fine_adj = (fine_adj + delta_dac_code)&0x3FF
-            dac_code = coarse << 10 | fine_adj
-            self.tpx4.SetDacs(rpc.DacValueList(idx=self.chip_index,items=[rpc.DacValue(dac=dacs_lib[dac_name]['DAC'], value=dac_code)]))
-            feedback = self.readDAC(dac_name,debug=False)
-            loop_counter +=1
+          loop_counter,feedback,dac_code = self.linearize_voltage_dac(dac_name,value,dac_code)
           if debug: print(f'Optimized DAC {dac_name} to: {value:.5f} V with {loop_counter} iterations. DAC code: 0x{dac_code:04X} and readback value: {feedback:.5f} ')
 
       else:
@@ -300,7 +330,7 @@ class DACs:
     else:
       print(f'ERROR: dac {dac_name} not in dac list. Cannot write')
       raise SystemExit
-  
+
   def readDAC(self,dac_name,debug=True):
     if dac_name in dacs_lib.keys():
       #Read DAC value
@@ -314,6 +344,7 @@ class DACs:
   def conf_threshold(self,
                   THR_e=1000,
                   FBK_V=None,
+                  force_FBK=True,
                   debug=True):
 
     # Nominal calculation of gain does not represent the real gain, Timepix4 CSA parasitic capacitance is around 1.7fF
@@ -331,7 +362,11 @@ class DACs:
 
     THR_FBK_V=THR_e*Gain_Ve
 
-    rb_fbk = self.setDAC('VFBK',value=FBK_V,debug=debug)
+    #Force FBK or only readback the value
+    if force_FBK:
+      rb_fbk = self.setDAC('VFBK',value=FBK_V,debug=debug)
+    else:
+      rb_fbk = self.readDAC('VFBK',debug=debug)
 
     THR_V = (FBK_V - THR_FBK_V) if self.hole_polarity else (FBK_V + THR_FBK_V)
 
