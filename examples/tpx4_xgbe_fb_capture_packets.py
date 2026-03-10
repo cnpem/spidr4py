@@ -70,7 +70,7 @@ def async_capture(port,decoder,stop_event,new_frame_event):
 
     # Read-data and put in matrix
     # ------------------------------------------------------------------------------------------------------
-    for data in stream.queue_generator(q, 20):
+    for data in stream.queue_generator(q, 60):
         decoder.read_packet(data)
         #Stop thread when stop event is set and the current frame is finished
         if decoder.decoded_packet.name == 'FRAME_START' and decoder.state != 'SEGMENT':
