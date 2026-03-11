@@ -303,6 +303,7 @@ with helpers.cl_connect() as channel:
     # Matrix of masked pixels
     output_data['masked']=np.zeros(shape=(ARRAY_SIZE_Y,ARRAY_SIZE_X), dtype=bool)
     output_data['dead_pixels']=np.zeros(shape=(ARRAY_SIZE_Y,ARRAY_SIZE_X), dtype=bool)
+    output_data['unequalized_pixels']=np.zeros(shape=(ARRAY_SIZE_Y,ARRAY_SIZE_X), dtype=bool)
 
     # Find dac_code that maximizes noise
     for dac_code in output_data['dac_codes']:
@@ -313,6 +314,7 @@ with helpers.cl_connect() as channel:
                     output_data['equalization_code'][Y][X]=dac_code
 
     output['dead pixels number'] = 0
+    output['unequalized pixels number'] = 0
     # Writes threshold config value 15 and mask dead pixels
     for X in range(0,ARRAY_SIZE_X,1):
         for Y in range(0,ARRAY_SIZE_Y,1):
@@ -320,6 +322,9 @@ with helpers.cl_connect() as channel:
                 output_data['dead_pixels'][Y][X]=1
                 output_data['equalization_code'][Y][X]=15
                 output['dead pixels number'] += 1
+            elif output_data['equalization_code'][Y][X]==0 or output_data['equalization_code'][Y][X]==31:
+                output_data['unequalized_pixels'][Y][X]=1
+                output['unequalized pixels number'] += 1
 
     #Search for hot pixels
     # ------------------------------------------------------------------------------------------------------
@@ -419,16 +424,17 @@ with helpers.cl_connect() as channel:
 
     #Compute mask pixels as dead or hot pixels
     # ------------------------------------------------------------------------------------------------------
-    output_data['masked'] = np.logical_or(output_data['dead_pixels'],output_data['hot_pixels'])
+    output_data['masked'] = np.logical_or(np.logical_or(output_data['dead_pixels'],output_data['hot_pixels']),output_data['unequalized_pixels'])
 
     output_data['masked_coordinates']=np.argwhere(output_data['masked']>0)
 
     output['Number of masked'] = len(output_data['masked_coordinates'])
     output['Percentual masked'] = 100*output['Number of masked']/(ARRAY_SIZE_X*ARRAY_SIZE_Y)
+
     # Prints information of masked pixels
-    #for Y,X in output_data['masked_coordinates']:
-    #    print(f"mask ({X},{Y}): max count {output_data['max_count'][Y][X]} equalization code {output_data['equalization_code'][Y][X]}")
-    print(f"Dead pixels number: {output['dead pixels number']}\t Hot pixels number: {output['hot pixels number']}")
+    print(f"Dead pixels number: {output['dead pixels number']}")
+    print(f"Hot pixels number: {output['hot pixels number']}")
+    print(f"Unequalized pixels number: {output['unequalized pixels number']}")
     print(f"Total of masked pixels: {output['Number of masked']}/{ARRAY_SIZE_X*ARRAY_SIZE_Y} = {output['Percentual masked']:.2f} %")
 
     #Calculate the histogram of DAC codes
@@ -476,11 +482,11 @@ with helpers.cl_connect() as channel:
     #Plot masked pixels matrix
     plt.figure()
     # Define colors for different ranges (blue for healthy pixels, yellow for dead and red for hot)
-    cmap = LinearSegmentedColormap.from_list("my_cmap", ['blue', 'yellow', 'red'])
-    norm = BoundaryNorm([0, 1, 2, 3], cmap.N)
-    plt.imshow(2*output_data['hot_pixels']+output_data['dead_pixels'],origin='lower',cmap=cmap, norm=norm)
-    plt.title(f'{output['Number of masked']} masked pixels matrix. {output['Percentual masked']:.2f} %\n{output['dead pixels number']} dead and {output['hot pixels number']} hot pixels')
+    cmap = LinearSegmentedColormap.from_list("my_cmap", ['blue', 'yellow', 'red','green'])
+    norm = BoundaryNorm([0, 1, 2, 3, 4], cmap.N)
+    plt.imshow(3*output_data['unequalized_pixels']+2*output_data['hot_pixels']+output_data['dead_pixels'],origin='lower',cmap=cmap, norm=norm)
+    plt.title(f'{output['Number of masked']} masked pixels matrix. {output['Percentual masked']:.2f} %\n{output['dead pixels number']} dead, {output['hot pixels number']} hot, and {output['unequalized pixels number']} unequalized pixels')
     cbar = plt.colorbar()
-    cbar.ax.set_yticks([0.5, 1.5, 2.5],labels=['Normal Pixels','Dead Pixels','Hot Pixels'])
+    cbar.ax.set_yticks([0.5, 1.5, 2.5, 3.5],labels=['Normal Pixels','Dead Pixels','Hot Pixels','Unequalized Pixels'])
     plt.savefig(os.path.join(output['fullpath'],'masked_pixels.png'))
     plt.show()
