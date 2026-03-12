@@ -368,7 +368,7 @@ class DACs:
     else:
       rb_fbk = self.readDAC('VFBK',debug=debug)
 
-    THR_V = (FBK_V - THR_FBK_V) if self.hole_polarity else (FBK_V + THR_FBK_V)
+    THR_V = (rb_fbk - THR_FBK_V) if self.hole_polarity else (rb_fbk + THR_FBK_V)
 
     rb_th = self.setDAC('VThreshold',value=THR_V,debug=debug)
 
