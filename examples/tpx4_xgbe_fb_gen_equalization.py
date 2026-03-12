@@ -124,8 +124,8 @@ os.makedirs(output['fullpath'],exist_ok=True)
 #Call frame based configuration script resetting the chip
 ans = os.system(f"python3 tpx4_fb_config_fast.py {ns.iface} --host {ns.host} \
     --port {ns.port} --chip-idx {ns.chip_idx} --no-ffly-mode --xgbe-port {ns.xgbe_port} \
-    --crw-time-us 500000 --counter 16bit --reset --th_e 0 --gain {ns.gain} --no-status-packets \
-    --polarity {ns.polarity} --dac-mode {ns.dac_mode}")
+    --crw-time-us 500000 --counter 16bit --no-reset --th_e 0 --gain {ns.gain} --no-status-packets \
+    --polarity {ns.polarity} --dac-mode {ns.dac_mode} --no-dac-load")
 
 if ans != 0:
     print(f'ERROR: running tpx4_fb_config_fast.py: {ans}')
