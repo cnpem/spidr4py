@@ -47,10 +47,10 @@ def parse_tuples_pairs(s):
         raise ArgumentTypeError(f"Invalid format: {s}. Error: {e}")
 
 ns = helpers.cl_parse(with_chip_idx=True, args={
-    '--equalization-path':dict(type=str,default='equalization',help='path to equalization files'),
-    '--dac-codes-file':dict(type=str,default='eq_codes_fb.dat',help='path to dac codes file'),
-    '--mask-file':dict(type=str,default='eq_mask_fb.dat',help='path to mask bit file'),
-    '--to-mask':dict(type=parse_tuples_pairs,default=(),nargs='+',help='mask additional pixels. Send pixels as tuples: (X1,Y1) (X2,Y2)'),
+    '--equalization-path':dict(type=str,default='config/{chipboard_serial_number}/{chip_id}/',help='path to equalization files'),
+    '--dac-codes-file':dict(type=str,default='eq_codes_fb.dat',help='dac codes filename'),
+    '--mask-file':dict(type=str,default='eq_mask_fb.dat',help='mask bit filename'),
+    '--to-mask':dict(type=parse_tuples_pairs,default=(),nargs='+',help='mask additional pixels. Send pixels as tuples: Y1,X1 Y2,X2'),
 })
 
 # # Main loop, create network connection
@@ -64,9 +64,22 @@ with helpers.cl_connect() as channel:
     # ------------------------------------------------------------------------------------------------------
     mask_file = ns.mask_file
     eq_file = ns.dac_codes_file
-    if os.path.isdir(ns.equalization_path) and os.path.isfile(os.path.join(ns.equalization_path,eq_file)) and os.path.isfile(os.path.join(ns.equalization_path,mask_file)):
+    if ns.equalization_path == 'config/{chipboard_serial_number}/{chip_id}/':
+        #get the control service
+        ctrl = rpc.ControlInfoStub(channel)
+        #get chipboard carrier information
+        carrier = ctrl.GetChipBoardInfo(rpc.EMPTY)
+        #get chips information
+        chips = ctrl.GetPixelChipInfo(rpc.EMPTY)
+        #consider a single ASIC connected in position 0
+        chip = chips.items[0]
+        config_dir = f'config/{carrier.serial}/{chip.chip_id:08x}/'
+    else:
+        config_dir = ns.equalization_path
 
-        print(f'Loading equalization directory: {ns.equalization_path}')
+    if os.path.isdir(config_dir) and os.path.isfile(os.path.join(config_dir,eq_file)) and os.path.isfile(os.path.join(config_dir,mask_file)):
+
+        print(f'Loading equalization directory: {config_dir}')
         print(f'Loading dac codes from {eq_file}')
         print(f'Loading mask bits from {mask_file}')
         print('------------------------------------------------------------------------------------------------------------')
@@ -74,21 +87,23 @@ with helpers.cl_connect() as channel:
         pixel_cfg_mtx = np.zeros((ARRAY_SIZE_Y, ARRAY_SIZE_X), dtype=np.uint8)
 
         #loads equalization and mask bits from file
-        mask=np.loadtxt(os.path.join(ns.equalization_path,mask_file), dtype=np.bool)
-        equal=np.loadtxt(os.path.join(ns.equalization_path,eq_file), dtype=int)
+        mask_coordinates=np.loadtxt(os.path.join(config_dir,mask_file), dtype=int)
+        equal=np.loadtxt(os.path.join(config_dir,eq_file), dtype=int)
 
-        #configure pixels and calculate number of masked ones
-        num_mask_pixels=0
+        #Create a boolean array to convert coordinates to a matrix
+        mask_matrix=np.zeros(shape=(ARRAY_SIZE_Y,ARRAY_SIZE_X), dtype=bool)
 
+        for (y,x) in mask_coordinates:
+            mask_matrix[y,x] = True
+        for (y,x) in ns.to_mask:
+            mask_matrix[y,x] = True
+
+        #Configure individual pixel config
         for X in range(0,ARRAY_SIZE_X,1):
             for Y in range(0,ARRAY_SIZE_Y,1):
-                if (X,Y) in ns.to_mask:
-                    mask[X][Y] = True
-                    print(f'Masking extra pixel X={X} Y={Y}')
-                pixel_cfg_mtx[Y][X] = tpx4tools.PixelConfig(dac=equal[X][Y], power_enable=not(mask[X][Y]), tp_enable=False, mask=mask[X][Y]).word
-                #print(f'Pixel X:{X:03d} Y:{Y:03d} Equal: 0x{equal[X][Y]:02X} or {equal[X][Y]:02d} Mask: {mask[X][Y]}. Pixel cfg: 0x{pixel_cfg_mtx[Y][X]:02X} or {pixel_cfg_mtx[Y][X]:02d}')
-                if mask[X][Y]:
-                    num_mask_pixels+=1
+                pixel_cfg_mtx[Y][X] = tpx4tools.PixelConfig(dac=equal[Y][X], power_enable=not(mask_matrix[Y,X]), tp_enable=False, mask=mask_matrix[Y,X]).word
+
+        num_mask_pixels = np.sum(mask_matrix)
         print(f'Num masked pixels: {num_mask_pixels}/{ARRAY_SIZE_X*ARRAY_SIZE_Y} = {100*num_mask_pixels/(ARRAY_SIZE_X*ARRAY_SIZE_Y):.3f}%')
 
         #Serialize pixel config data
@@ -102,4 +117,4 @@ with helpers.cl_connect() as channel:
                 )
         )
     else:
-        print(f"ERROR: {ns.equalization_path} is not a valid path or equalization files not found. Aborting equalization")
+        print(f"ERROR: {config_dir} is not a valid path or equalization files not found. Aborting equalization")

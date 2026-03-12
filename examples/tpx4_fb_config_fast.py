@@ -39,6 +39,7 @@ ns = helpers.cl_parse(with_chip_idx=True, args={
     '--reset': dict(action=BooleanOptionalAction,default=False,help='reset Timepix4 ASIC at the beginning'),
     '--status-packets':dict(action=BooleanOptionalAction,default=False,help='Enables sending output status packets in the data stream (for example, Shutter Rise/Fall)'),
     '--force-T0sync':dict(action=BooleanOptionalAction,default=True,help='Force to send T0Sync, even without reset'),
+    '--dac-load':dict(action=BooleanOptionalAction,default=True,help='Load DACs at initialization'),
     '--th_e':dict(type=int,default=0,help='Threshold in e-'),
     '--polarity': dict(choices=['h','e'],default='e',help='Charge collection'),
     '--gain': dict(choices=['low','high'],default='high',help='CSA gain'),
@@ -195,7 +196,7 @@ with helpers.cl_connect() as channel:
 
     #Configure DACs
     # ------------------------------------------------------------------------------------------------------
-    dacs = dacs.DACs(tpx4,helpers.cl_chip_idx(),adc_half='TOP',adc='internal',debug=True,dac_mode=ns.dac_mode)
+    dacs = dacs.DACs(tpx4,helpers.cl_chip_idx(),adc_half='TOP',adc='internal',debug=True,dac_mode=ns.dac_mode, initialize=ns.dac_load)
 
     # Configure threshold in e. Polarity = 0 means electrons collection
     dacs.conf_threshold(THR_e=ns.th_e,debug=True)
