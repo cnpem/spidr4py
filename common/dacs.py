@@ -213,8 +213,8 @@ class DACs:
         self.adc_external = False
 
     if self.adc_external == False:
-      # We're going to use the internal ADC, configure at 20 MHz with 32768 ADC cycles
-      self.tpx4.ConfigAdc(rpc.Tpx4AdcConfig(clock_ref=20000000, nperiods=32*1024))
+      # We're going to use the internal ADC, configure at 4 MHz with 32768 ADC cycles
+      self.tpx4.ConfigAdc(rpc.Tpx4AdcConfig(clock_ref=4000000, nperiods=32*1024))
 
     readout_config = self.tpx4.ReadoutGetConfig(rpc.ChipIndex(idx=self.chip_index))
     self.hole_polarity = readout_config.polarity
