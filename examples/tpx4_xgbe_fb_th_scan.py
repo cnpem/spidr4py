@@ -212,16 +212,36 @@ with helpers.cl_connect() as channel:
     output_data['threshold_target'] = np.linspace(ns.th_low_e,ns.th_high_e,ns.n_points)
     valid_frames = []
 
-    output_data['threshold_readback'] = []
+    output_data['Threshold Readback (e)'] = []
+
+    #Create output for dacs readback values
+    output_dacs = {}
+
+    #Append dacs to output_dacs
+    for dac in dacs.dacs.keys():
+        output_dacs[f'{dac} readback (V)'] = dacs.dacs[dac]['readback']
+
+    #Create a data dict for specific DAC monitoring values
+    output_dacs_data = {}
+
+    output_dacs_data['Threshold DAC readback (V)'] = []
+    output_dacs_data['FBK DAC readback (V)'] = []
+    output_dacs_data['Threshold dac code'] = []
+    output_dacs_data['FBK dac code'] = []
 
     for index,th in enumerate(output_data['threshold_target']):
         # Configure threshold in e. Polarity = 0 means electrons collection
         print('-----------------------------------------------------------')
-        output_data['threshold_readback'].append(dacs.conf_threshold(THR_e=th,force_FBK=False,debug=True))
+        output_data['Threshold Readback (e)'].append(dacs.conf_threshold(THR_e=th,force_FBK=True,debug=True))
+
+        output_dacs_data['Threshold DAC readback (V)'].append(dacs.dacs['VThreshold']['readback'])
+        output_dacs_data['FBK DAC readback (V)'].append(dacs.dacs['VFBK']['readback'])
+        output_dacs_data['Threshold dac code'].append(dacs.dacs['VThreshold']['dac_code'])
+        output_dacs_data['FBK dac code'].append(dacs.dacs['VFBK']['dac_code'])
 
         for i in range(ns.repeat):
 
-            print(f'Threshold scan step {index+1}/{ns.n_points}: th target {th:.2f} e-. Measured {output_data['threshold_readback'][index]:.2f}. Repetition {i+1}/{ns.repeat}')
+            print(f'Threshold scan step {index+1}/{ns.n_points}: th target {th:.2f} e-. Measured {output_data['Threshold Readback (e)'][index]:.2f}. Repetition {i+1}/{ns.repeat}')
 
             #clear start flags
             start_event_top.clear()
@@ -284,17 +304,22 @@ with helpers.cl_connect() as channel:
     print(f'Saving output hdf5: {os.path.join(output['fullpath'],'th-scan.hdf5')}')
     # Save images in a .hdf5 file
     with h5py.File(os.path.join(output['fullpath'],'th-scan.hdf5'), mode = 'w') as hdf5_file:
-        hdf5_file.create_dataset('/entry/data/data', data = images)
+        hdf5_file.create_dataset('entry/data/data', data = images)
         for key in output.keys():
             hdf5_file.attrs[key] = output[key]
         for key in output_data.keys():
-            hdf5_file.create_dataset(f'/entry/data/{key}', data = output_data[key])
+            hdf5_file.create_dataset(f'entry/data/{key}', data = output_data[key])
+        g_dacs = hdf5_file.create_group('entry/dacs')
+        for dacs_readback in output_dacs.keys():
+            g_dacs.attrs[dacs_readback] = output_dacs[dacs_readback]
+        for key in output_dacs_data.keys():
+            g_dacs.create_dataset(key, data = output_dacs_data[key])
 
     #Sort threshold readback array and counts accordingly to the readback threshold
-    output_data['threshold_readback'] = np.array(output_data['threshold_readback'])
+    output_data['Threshold Readback (e)'] = np.array(output_data['Threshold Readback (e)'])
     output_data['sum_per_threshold'] = np.array(output_data['sum_per_threshold'])
-    th_readback_sorted = output_data['threshold_readback'][np.argsort(output_data['threshold_readback'])]
-    sum_sorted = output_data['sum_per_threshold'][np.argsort(output_data['threshold_readback'])]
+    th_readback_sorted = output_data['Threshold Readback (e)'][np.argsort(output_data['Threshold Readback (e)'])]
+    sum_sorted = output_data['sum_per_threshold'][np.argsort(output_data['Threshold Readback (e)'])]
 
     #Plot the figure
     plt.figure()
