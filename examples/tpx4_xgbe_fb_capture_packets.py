@@ -3,11 +3,11 @@
 #############################################################################################################
 #
 #  tpx4_xgbe_fb_capture_packets.py
-#  
-#  Performs frame-based acquisitions using 10G interface and build an HDF5 file. This script
-#    is an alternative to SDAQ   
 #
-#  Authors: 
+#  Performs frame-based acquisitions using 10G interface and build an HDF5 file. This script
+#    is an alternative to SDAQ
+#
+#  Authors:
 #   Mauricio Donatti <mauricio.donatti@lnls.br>
 #
 #  September 2025
@@ -54,7 +54,7 @@ def dir_path(path):
 #Define function to plot images
 def live_plot(line,img):
     line.set_data(img)
-    line.set_clim(vmin=0, vmax=ns.scale)
+    line.set_clim(vmin=0, vmax=ns.scale if ns.scale != 0 else np.max(img))
     plt.pause(0.2)
 
 
@@ -94,7 +94,7 @@ ns = helpers.cl_parse(with_chip_idx=True, args={
     '--debug':dict(type=int,choices=range(4),default=1,help='Print debug level. 0: no print, 1: standard, 2: verbose, 3: all messages'),
     "--exposure-time-us": dict(type=int,default=10,help='Exposure time (shutter time) in microseconds'),
     '--th_e':dict(type=int,default=0,help='Threshold in e-'),
-    '--scale':dict(type=int,default=1,help='Adjust maximum scale value in the live viewer plots'),
+    '--scale':dict(type=int,default=0,required=False,help='Adjust maximum scale value in the live viewer plots. 0 means autoscale'),
     '--auto-shutter':dict(action=BooleanOptionalAction,default=False,help='Retrigger shutter when readout finishes'),
     '--live-viewer':dict(action=BooleanOptionalAction,default=False,help='Open a simple live viewer to see current image. This can affects readout performance'),
 })
@@ -152,8 +152,10 @@ with helpers.cl_connect() as channel:
     )
     trigger.ResetShutterCounter(rpc.EMPTY)          # Reset shutter counter
 
+    #Create an image
+    img = np.zeros((512,448),dtype=np.uint32)
+
     if ns.live_viewer:
-        img = np.zeros((512,448))
         fig = plt.figure()
         plt.ion()  # Turn interactive mode on
         # Plot the initial frame
@@ -190,21 +192,18 @@ with helpers.cl_connect() as channel:
     output['threshold (e)'] = ns.th_e
     output['exposure time (us)'] = ns.exposure_time_us
 
-    #control valid frames: used only for live viewer
-    frame_to_plot = []
-
     #Wait exit, quit, q or e to send the stop event
     rec = ''
     status = trigger.GetStatus(rpc.EMPTY)           # get trigger status
+
+    images = []
+
     try:
         while rec not in ['exit','quit','e','q']:
 
-            if ns.live_viewer and frame_to_plot:
-                if frame_to_plot[0] < len(decoder_bot.frames):
-                    idx = frame_to_plot.pop(0)
-                    print(f'Plotting frame {idx}')
-                    img = np.concatenate((decoder_bot.frames[idx], np.rot90(decoder_top.frames[idx], 2)), axis = 0)
-                    live_plot(line,img)
+            #Update live viewer with last image
+            if ns.live_viewer and status.shutter_counter > 0:
+                live_plot(line,img)
 
             #auto shutter disabled waits for user to trigger next frame
             if ns.auto_shutter == False:
@@ -228,15 +227,39 @@ with helpers.cl_connect() as channel:
                 #send the shutter
                 trigger.StartAutoShutter(rpc.EMPTY)             # Start auto-shutter
 
-                if ns.live_viewer:
-                    # Mark current frame as valid and trigger new plot
-                    with lock:
-                        frame_to_plot.append(current_frame + 1)
+                #get shutter open frame index
+                with lock:
+                    shutter_open_frame = current_frame+1
 
+                #Wait trigger
                 status = trigger.GetStatus(rpc.EMPTY)           # get trigger status
                 while status.auto_shutter_busy:
                     time.sleep(0.1)
                     status = trigger.GetStatus(rpc.EMPTY)       # Get the current status
+
+                #get shutter close frame index
+                with lock:
+                    shutter_close_frame = current_frame+1
+
+                #Wait for the current frame to finish and the next one
+                for i in range(2):
+                    #clear start flags to wait this frame end
+                    start_event_top.clear()
+                    start_event_bot.clear()
+
+                    #wait until this frame ends
+                    start_event_top.wait()
+                    start_event_bot.wait()
+
+                #Clear the image array
+                img[:][:] = 0
+
+                #Concatenate the frames
+                for idx in range(shutter_open_frame,shutter_close_frame+1):
+                    img += np.concatenate((decoder_bot.frames[idx], np.rot90(decoder_top.frames[idx], 2)), axis = 0)
+                #Append the image to the images array
+                images.append(img)
+
     except KeyboardInterrupt:
         pass
 
@@ -252,14 +275,15 @@ with helpers.cl_connect() as channel:
     capture_thread_top.join()
     capture_thread_bot.join()
 
-    # Concatenate botton and top matrixes to construct full images
-    images = []
+    # Concatenate bottom and top matrixes to construct full frames
+    frames = []
     for i in range(min(len(decoder_top.frames),len(decoder_bot.frames))):
-        images.append(np.concatenate((decoder_bot.frames[i], np.rot90(decoder_top.frames[i], 2)), axis = 0))
+        frames.append(np.concatenate((decoder_bot.frames[i], np.rot90(decoder_top.frames[i], 2)), axis = 0))
 
     print(f'Saving output image: {os.path.join(ns.path,f'{ns.filename}.hdf5')}')
     # Save images in a .hdf5 file
     with h5py.File(os.path.join(ns.path,f'{ns.filename}.hdf5'), mode = 'w') as hdf5_file:
-        hdf5_file.create_dataset('/entry/data/data', data = images)
+        hdf5_file.create_dataset('/entry/data/frames', data = frames)
+        hdf5_file.create_dataset('/entry/data/images', data = images)
         for key in output.keys():
             hdf5_file.attrs[key] = output[key]
