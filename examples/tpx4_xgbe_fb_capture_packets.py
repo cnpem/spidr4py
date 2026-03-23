@@ -24,6 +24,7 @@ import h5py
 import sys
 import datetime
 from argparse import ArgumentTypeError,BooleanOptionalAction #argparse is used inside helpers
+import subprocess
 
 import matplotlib
 matplotlib.use('QtAgg')
@@ -89,8 +90,8 @@ def async_capture(port,decoder,stop_event,new_frame_event):
 ns = helpers.cl_parse(with_chip_idx=True, args={
     "iface": dict(help="Network interface", type=str),
     "--xgbe-port": dict(help="10 GbE port", type=int, default=8192),
-    '--path':dict(type=dir_path,required=True,help='path to output file'),
-    '--filename':dict(type=str,default='decoded_frame',help='test name to be appended to output filename'),
+    '--path':dict(type=str,default='results',help='path to output files'),
+    '--testname':dict(type=str,default='fb_acquisition',help='test name to create results directory'),
     '--debug':dict(type=int,choices=range(4),default=1,help='Print debug level. 0: no print, 1: standard, 2: verbose, 3: all messages'),
     "--exposure-time-us": dict(type=int,default=10,help='Exposure time (shutter time) in microseconds'),
     '--th_e':dict(type=int,default=0,help='Threshold in e-'),
@@ -186,7 +187,45 @@ with helpers.cl_connect() as channel:
     output['arguments'] = ''
     for arg in sys.argv:
         output['arguments'] += arg + ' '
-    output['datetime'] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    output['datetime'] = datetime.datetime.now().strftime("%Y-%m-%d_%Hh%Mm%Ss")
+
+    #Get git repo information and append to metadata
+    output['git url'] = subprocess.check_output('git config --get remote.origin.url',shell=True)
+    output['git commit id'] = subprocess.check_output('git rev-parse HEAD',shell=True)
+    output['git last commit date'] = subprocess.check_output("git log -1 --format='%cd'",shell=True)
+
+    #Store all arguments to output as they will be saved as hdf5 attributes
+    for arg_name, arg_value in vars(ns).items():
+        output[arg_name] = arg_value
+
+    #Create expected directories
+    output['fullpath'] = os.path.join(os.getcwd(),ns.path,f'{output['datetime']}_{ns.testname}')
+    os.makedirs(output['fullpath'],exist_ok=True)
+
+    #Get Spidr4 and Timepix info
+    # Get the version
+    version = ctrl.GetVersion(rpc.EMPTY)
+    output[version.product]=f"{version.majr}.{version.minr}.{version.patch} (git-info={version.commit_info})"
+
+    fwversion = ctrl.GetFirmwareVersion(rpc.EMPTY)
+    output[fwversion.product]=f"{fwversion.majr}.{fwversion.minr}.{fwversion.patch} (git-info={fwversion.commit_info})"
+
+    serial = ctrl.GetSerial(rpc.EMPTY)
+    output['SPIDR4 serial']=f"{serial.value:016x}"
+
+    carrier = ctrl.GetChipBoardInfo(rpc.EMPTY)
+    output['Chipboard Type'] = carrier.type
+    output['Chipboard Serial'] = carrier.serial
+
+    chips = ctrl.GetPixelChipInfo(rpc.EMPTY)
+    if len(chips.items) > 1:
+        print(f'ERROR: equalization script does not support boards with {len(chips.items)} chips')
+        sys.exit(1)
+    else:
+        chip = chips.items[0]
+        output['Chip Type'] = rpc.PixelChipType.Name(chip.type)
+        output['Chip Revision'] = chip.revision
+        output['Chip ID'] = f'{chip.chip_id:08x}'
 
     #Build the threshold
     output['threshold (e)'] = ns.th_e
@@ -280,10 +319,14 @@ with helpers.cl_connect() as channel:
     for i in range(min(len(decoder_top.frames),len(decoder_bot.frames))):
         frames.append(np.concatenate((decoder_bot.frames[i], np.rot90(decoder_top.frames[i], 2)), axis = 0))
 
-    print(f'Saving output image: {os.path.join(ns.path,f'{ns.filename}.hdf5')}')
+    print(f'Saving output hdf5: {os.path.join(output['fullpath'],'fb_acquisition.hdf5')}')
     # Save images in a .hdf5 file
-    with h5py.File(os.path.join(ns.path,f'{ns.filename}.hdf5'), mode = 'w') as hdf5_file:
-        hdf5_file.create_dataset('/entry/data/frames', data = frames)
-        hdf5_file.create_dataset('/entry/data/images', data = images)
+    with h5py.File(os.path.join(output['fullpath'],'fb_acquisition.hdf5'), mode = 'w') as hdf5_file:
+        hdf5_file.create_dataset('entry/data/CRW_frames', data = frames)
+        hdf5_file.create_dataset('entry/data/data', data = images)
         for key in output.keys():
             hdf5_file.attrs[key] = output[key]
+        #Create a dac group to store dac values as attributes
+        g_dacs = hdf5_file.create_group('/dacs')
+        for dac in dacs.dacs.keys():
+            g_dacs.attrs[f'{dac} readback (V)'] = dacs.dacs[dac]['readback']
