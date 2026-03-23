@@ -210,7 +210,6 @@ with helpers.cl_connect() as channel:
 
     #Build the threshold array to iterate
     output_data['threshold_target'] = np.linspace(ns.th_low_e,ns.th_high_e,ns.n_points)
-    valid_frames = []
 
     output_data['Threshold Readback (e)'] = []
 
@@ -228,6 +227,12 @@ with helpers.cl_connect() as channel:
     output_dacs_data['FBK DAC readback (V)'] = []
     output_dacs_data['Threshold dac code'] = []
     output_dacs_data['FBK dac code'] = []
+
+    #Valid images array
+    images = []
+
+    #Create an image
+    img = np.zeros((512,448))
 
     for index,th in enumerate(output_data['threshold_target']):
         # Configure threshold in e. Polarity = 0 means electrons collection
@@ -251,15 +256,40 @@ with helpers.cl_connect() as channel:
             start_event_top.wait()
             start_event_bot.wait()
 
-            with lock:
-                valid_frames.append(current_frame+1)
-
             #send the shutter
             trigger.StartAutoShutter(rpc.EMPTY)             # Start auto-shutter
+
+            with lock:
+                shutter_open_frame = current_frame+1
+
+            #Wait trigger to finish
             status = trigger.GetStatus(rpc.EMPTY)           # get trigger status
             while status.auto_shutter_busy:
                 time.sleep(0.1)
                 status = trigger.GetStatus(rpc.EMPTY)       # Get the current status
+
+            #get shutter close frame index
+            with lock:
+                shutter_close_frame = current_frame+1
+
+            #Wait for the current frame to finish and the next one
+            for i in range(2):
+                #clear start flags to wait this frame end
+                start_event_top.clear()
+                start_event_bot.clear()
+
+                #wait until this frame ends
+                start_event_top.wait()
+                start_event_bot.wait()
+
+            #Clear the image array
+            img[:][:] = 0
+
+            #Concatenate the frames
+            for idx in range(shutter_open_frame,shutter_close_frame+1):
+                img += np.concatenate((decoder_bot.frames[idx], np.rot90(decoder_top.frames[idx], 2)), axis = 0)
+            #Append the image to the images array
+            images.append(img)
 
     #clear start flags
     start_event_top.clear()
@@ -273,16 +303,14 @@ with helpers.cl_connect() as channel:
     status = trigger.GetStatus(rpc.EMPTY)           # get trigger status
     print(f"Shutter total count: {status.shutter_counter}")
 
-    print(f'Valid frames: {valid_frames}')
-
     #wait threads to finish
     capture_thread_top.join()
     capture_thread_bot.join()
 
     # Concatenate botton and top matrixes to construct full images, considering valid frames
-    images = []
-    for i in valid_frames:
-        images.append(np.concatenate((decoder_bot.frames[i], np.rot90(decoder_top.frames[i], 2)), axis = 0))
+    frames = []
+    for i in range(min(len(decoder_top.frames),len(decoder_bot.frames))):
+        frames.append(np.concatenate((decoder_bot.frames[i], np.rot90(decoder_top.frames[i], 2)), axis = 0))
 
     #Sum the counts of valid images
     counter_sum = np.sum(images,axis=(1,2))
@@ -305,6 +333,7 @@ with helpers.cl_connect() as channel:
     # Save images in a .hdf5 file
     with h5py.File(os.path.join(output['fullpath'],'th-scan.hdf5'), mode = 'w') as hdf5_file:
         hdf5_file.create_dataset('entry/data/data', data = images)
+        hdf5_file.create_dataset('entry/data/CRW_frames', data = frames)
         for key in output.keys():
             hdf5_file.attrs[key] = output[key]
         for key in output_data.keys():
