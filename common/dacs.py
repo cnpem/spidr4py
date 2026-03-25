@@ -191,6 +191,8 @@ class DACs:
     self.debug = debug
     self.chip_index = chip_index
     self.dac_mode = dac_mode
+    self.dacs = dacs_lib
+
     print(f'Setting dacs to dac mode {dac_mode}')
     #Check adc half matrix validity
     match adc_half.upper():
@@ -213,8 +215,8 @@ class DACs:
         self.adc_external = False
 
     if self.adc_external == False:
-      # We're going to use the internal ADC, configure at 20 MHz with 32768 ADC cycles
-      self.tpx4.ConfigAdc(rpc.Tpx4AdcConfig(clock_ref=20000000, nperiods=32*1024))
+      # We're going to use the internal ADC, configure at 4 MHz with 32768 ADC cycles
+      self.tpx4.ConfigAdc(rpc.Tpx4AdcConfig(clock_ref=4000000, nperiods=32*1024))
 
     readout_config = self.tpx4.ReadoutGetConfig(rpc.ChipIndex(idx=self.chip_index))
     self.hole_polarity = readout_config.polarity
@@ -222,15 +224,20 @@ class DACs:
     #print(f'Polarity: {readout_config.polarity}')
     #print(f'Gain: {readout_config.gain}')
 
-    if initialize == True:
-      for dac,data in dacs_lib.items():
-        #Set DAC default value
-        if dac_mode in data.keys():
+    for dac,data in self.dacs.items():
+      #Set DAC default value
+      if dac_mode in data.keys():
+        if initialize == True:
           if debug: print(f'Set DAC {dac} to default value {data[dac_mode]:.3G} {data['unit']} ')
           self.setDAC(dac,value=data[dac_mode],debug=self.debug)
         else:
-          print(f'ERROR: dac_mode {dac_mode} not found!')
-          sys.exit(1)
+          #Initialize dac_code as None
+          self.dacs[dac]['dac_code'] = None
+        #Read DAC on debug mode (populate readback value in dictionary)
+        self.readDAC(dac,debug=self.debug)
+      else:
+        print(f'ERROR: dac_mode {dac_mode} not found!')
+        sys.exit(1)
 
   def linearize_voltage_dac(self,dac_name,target_value,initial_dac_code):
     #Start to linearize from the initial value
@@ -250,7 +257,7 @@ class DACs:
       dac_code = dac_code + delta_dac_code
 
       #Set the DAC, read the new feedback and compute the new error
-      self.tpx4.SetDacs(rpc.DacValueList(idx=self.chip_index,items=[rpc.DacValue(dac=dacs_lib[dac_name]['DAC'], value=dac_code)]))
+      self.setDAC_lowlevel(dac_name,dac_code,debug=False)
       new_feedback = self.readDAC(dac_name,debug=False)
       new_error = new_feedback - target_value
 
@@ -259,31 +266,32 @@ class DACs:
         #If the new one is worse, return to the previous dac step
         if abs(new_error) > abs(error):
           dac_code = dac_code - delta_dac_code
-          self.tpx4.SetDacs(rpc.DacValueList(idx=self.chip_index,items=[rpc.DacValue(dac=dacs_lib[dac_name]['DAC'], value=dac_code)]))
+          self.setDAC_lowlevel(dac_name,dac_code,debug=False)
         #Get the current feedback and break the while loop
         feedback = self.readDAC(dac_name,debug=False)
         break
       loop_counter +=1
+
     #Return the loop counter, the last feedback value and the final dac_code
     return loop_counter,feedback,dac_code
 
   def setDAC(self,dac_name,value,debug=True):
-    if dac_name in dacs_lib.keys():
-      if dacs_lib[dac_name]['bits'] == 8:
-        resolution_V = dacs_lib[dac_name]['fullscale']/(2**(dacs_lib[dac_name]['bits']))
+    if dac_name in self.dacs.keys():
+      if self.dacs[dac_name]['bits'] == 8:
+        resolution_V = self.dacs[dac_name]['fullscale']/(2**(self.dacs[dac_name]['bits']))
         dac_code = round(value/resolution_V)&0xFF
         # Write DAC value
-        self.tpx4.SetDacs(rpc.DacValueList(idx=self.chip_index,items=[rpc.DacValue(dac=dacs_lib[dac_name]['DAC'], value=dac_code)]))
+        self.setDAC_lowlevel(dac_name,dac_code,debug=False)
         feedback = self.readDAC(dac_name,debug=False)
         if debug: print(f'Write DAC {dac_name}: {value:.3g} V. Initial DAC code: 0x{dac_code:02X}')
 
         #Iterate to find best value for voltage DACs
-        if dacs_lib[dac_name]['unit'] == 'V':
+        if self.dacs[dac_name]['unit'] == 'V':
           loop_counter,feedback,dac_code = self.linearize_voltage_dac(dac_name,value,dac_code)
 
           if debug: print(f'Optimized DAC {dac_name} to: {value:.5f} V with {loop_counter} iterations. DAC code: 0x{dac_code:04X} and readback value: {feedback:.5f} ')
 
-      elif dacs_lib[dac_name]['bits'] == 14:
+      elif self.dacs[dac_name]['bits'] == 14:
 
         #fullrange is around 500mV per coarse adjustment
         #resolution is 10 bits
@@ -312,18 +320,22 @@ class DACs:
         dac_code = coarse << 10 | fine_adj
 
         # Write DAC value
-        self.tpx4.SetDacs(rpc.DacValueList(idx=self.chip_index,items=[rpc.DacValue(dac=dacs_lib[dac_name]['DAC'], value=dac_code)]))
+        self.setDAC_lowlevel(dac_name,dac_code,debug=False)
         feedback = self.readDAC(dac_name,debug=False)
         if debug: print(f'Write DAC {dac_name}: {value:.3g} V. Initial DAC code: 0x{dac_code:04X}')
 
         #Iterate to find best value for voltage DACs
-        if dacs_lib[dac_name]['unit'] == 'V':
+        if self.dacs[dac_name]['unit'] == 'V':
           loop_counter,feedback,dac_code = self.linearize_voltage_dac(dac_name,value,dac_code)
           if debug: print(f'Optimized DAC {dac_name} to: {value:.5f} V with {loop_counter} iterations. DAC code: 0x{dac_code:04X} and readback value: {feedback:.5f} ')
 
       else:
-        print(f'ERROR: dac {dac_name} with {dacs_lib[dac_name]['bits']} bits need to be implemented')
+        print(f'ERROR: dac {dac_name} with {self.dacs[dac_name]['bits']} bits need to be implemented')
         raise SystemExit
+
+      #Save variables to use in the future
+      self.dacs[dac_name]['readback'] = feedback
+      self.dacs[dac_name]['dac_code'] = dac_code
 
       #Return last feeedback value
       return feedback
@@ -332,13 +344,26 @@ class DACs:
       raise SystemExit
 
   def readDAC(self,dac_name,debug=True):
-    if dac_name in dacs_lib.keys():
+    if dac_name in self.dacs.keys():
       #Read DAC value
-      value = self.tpx4.AdcRead(rpc.Tpx4AdcRequest(idx=self.chip_index, dac_out=dacs_lib[dac_name][f'DAC_OUT_{self.adc_half}'], external=self.adc_external)).value
+      value = self.tpx4.AdcRead(rpc.Tpx4AdcRequest(idx=self.chip_index, dac_out=self.dacs[dac_name][f'DAC_OUT_{self.adc_half}'], external=self.adc_external)).value
+      #Save variables to use in the future
+      self.dacs[dac_name]['readback'] = value
       if debug: print(f'Read DAC {dac_name}: {value:.5f} V')
       return value
     else:
       print(f'ERROR: dac {dac_name} not in dac list. Cannot read')
+      raise SystemExit
+
+  def setDAC_lowlevel(self,dac_name,dac_code,debug=True):
+    if dac_name in self.dacs.keys():
+      #Read DAC value
+      self.tpx4.SetDacs(rpc.DacValueList(idx=self.chip_index,items=[rpc.DacValue(dac=self.dacs[dac_name]['DAC'], value=dac_code)]))
+      #Save dac_code to use in the future
+      self.dacs[dac_name]['dac_code'] = dac_code
+      if debug: print(f'Write DAC {dac_name} with dac_code: {dac_code:04X}')
+    else:
+      print(f'ERROR: dac {dac_name} not in dac list. Cannot write')
       raise SystemExit
 
   def conf_threshold(self,
@@ -356,7 +381,7 @@ class DACs:
     #We will use the value from Xavi scripts in V/e
 
     if FBK_V == None:
-      FBK_V = dacs_lib['VFBK'][self.dac_mode]
+      FBK_V = self.dacs['VFBK'][self.dac_mode]
 
     Gain_Ve = 20.5e-6 if self.low_gain else 34.5e-6
 
@@ -368,7 +393,7 @@ class DACs:
     else:
       rb_fbk = self.readDAC('VFBK',debug=debug)
 
-    THR_V = (FBK_V - THR_FBK_V) if self.hole_polarity else (FBK_V + THR_FBK_V)
+    THR_V = (rb_fbk - THR_FBK_V) if self.hole_polarity else (rb_fbk + THR_FBK_V)
 
     rb_th = self.setDAC('VThreshold',value=THR_V,debug=debug)
 

@@ -54,7 +54,7 @@ def dir_path(path):
 #Define function to plot images
 def live_plot(line,img):
     line.set_data(img)
-    line.set_clim(vmin=0, vmax=np.max(img))
+    line.set_clim(vmin=0, vmax=ns.scale)
     plt.pause(0.2)
 
 
@@ -70,7 +70,7 @@ def async_capture(port,decoder,stop_event,new_frame_event):
 
     # Read-data and put in matrix
     # ------------------------------------------------------------------------------------------------------
-    for data in stream.queue_generator(q, 20):
+    for data in stream.queue_generator(q, 60):
         decoder.read_packet(data)
         #Stop thread when stop event is set and the current frame is finished
         if decoder.decoded_packet.name == 'FRAME_START' and decoder.state != 'SEGMENT':
@@ -94,6 +94,7 @@ ns = helpers.cl_parse(with_chip_idx=True, args={
     '--debug':dict(type=int,choices=range(4),default=1,help='Print debug level. 0: no print, 1: standard, 2: verbose, 3: all messages'),
     "--exposure-time-us": dict(type=int,default=10,help='Exposure time (shutter time) in microseconds'),
     '--th_e':dict(type=int,default=0,help='Threshold in e-'),
+    '--scale':dict(type=int,default=1,help='Adjust maximum scale value in the live viewer plots'),
     '--auto-shutter':dict(action=BooleanOptionalAction,default=False,help='Retrigger shutter when readout finishes'),
     '--live-viewer':dict(action=BooleanOptionalAction,default=False,help='Open a simple live viewer to see current image. This can affects readout performance'),
 })

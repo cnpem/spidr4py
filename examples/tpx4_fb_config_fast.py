@@ -40,7 +40,7 @@ ns = helpers.cl_parse(with_chip_idx=True, args={
     '--status-packets':dict(action=BooleanOptionalAction,default=False,help='Enables sending output status packets in the data stream (for example, Shutter Rise/Fall)'),
     '--force-T0sync':dict(action=BooleanOptionalAction,default=True,help='Force to send T0Sync, even without reset'),
     '--dac-load':dict(action=BooleanOptionalAction,default=True,help='Load DACs at initialization'),
-    '--th_e':dict(type=int,default=0,help='Threshold in e-'),
+    '--th_e':dict(type=int,default=1000,help='Threshold in e-'),
     '--polarity': dict(choices=['h','e'],default='e',help='Charge collection'),
     '--gain': dict(choices=['low','high'],default='high',help='CSA gain'),
     '--dac-mode': dict(help='Select DAC mode to be loaded', default = 'fb_default', type=str),
