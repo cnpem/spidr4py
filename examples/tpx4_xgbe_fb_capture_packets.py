@@ -20,7 +20,6 @@ import threading
 import queue
 import numpy as np
 import os
-import h5py
 import sys
 import datetime
 from argparse import ArgumentTypeError,BooleanOptionalAction #argparse is used inside helpers
@@ -39,6 +38,7 @@ from spidr4 import rpc,utils, stream
 import helpers
 import fb_modules
 from common import dacs
+from common import hdf5
 
 #Global shared variables and semaphore
 current_frame = 0
@@ -231,11 +231,20 @@ with helpers.cl_connect() as channel:
     output['threshold (e)'] = ns.th_e
     output['exposure time (us)'] = ns.exposure_time_us
 
+    # Create the hdf5 output file
+    out_hdf5 = hdf5.hdf5_nexus(os.path.join(output['fullpath'],'fb_acquisition.hdf5'),serial_number = ctrl.GetChipBoardInfo(rpc.EMPTY).serial)
+
+    #Append metadata to output file
+    out_hdf5.write_metadata(output)
+
+    output_dacs = {}
+    for dac in dacs.dacs.keys():
+        output_dacs[f'{dac} readback (V)'] = dacs.dacs[dac]['readback']
+    out_hdf5.write_metadata(output_dacs)
+
     #Wait exit, quit, q or e to send the stop event
     rec = ''
     status = trigger.GetStatus(rpc.EMPTY)           # get trigger status
-
-    images = []
 
     try:
         while rec not in ['exit','quit','e','q']:
@@ -294,7 +303,7 @@ with helpers.cl_connect() as channel:
                 img = np.sum(np.concatenate((decoder_bot.frames[shutter_open_frame:shutter_close_frame+1], np.rot90(decoder_top.frames[shutter_open_frame:shutter_close_frame+1], k = 2, axes=(1,2))), axis = 1),axis=0)
 
                 #Append the image to the images array
-                images.append(img)
+                out_hdf5.append_image(img,field='data')
 
     except KeyboardInterrupt:
         pass
@@ -302,8 +311,12 @@ with helpers.cl_connect() as channel:
     #Send signal to stop read threads after the current frame
     stop_event.set()
 
+    for idx in range(min(len(decoder_bot.frames),len(decoder_top.frames))):
+        frame = np.concatenate((decoder_bot.frames[idx], np.rot90(decoder_top.frames[idx], 2)), axis = 0)
+        out_hdf5.append_image(frame,field='CRWframes')
+
     status = trigger.GetStatus(rpc.EMPTY)           # get trigger status
-    print(f"Shutter count: {status.shutter_counter}")
+    print(f"Finishing with {status.shutter_counter} shutters")
 
     plt.close()
 
@@ -311,19 +324,5 @@ with helpers.cl_connect() as channel:
     capture_thread_top.join()
     capture_thread_bot.join()
 
-    # Concatenate bottom and top matrixes to construct full frames
-    frames = []
-    for i in range(min(len(decoder_top.frames),len(decoder_bot.frames))):
-        frames.append(np.concatenate((decoder_bot.frames[i], np.rot90(decoder_top.frames[i], 2)), axis = 0))
-
-    print(f'Saving output hdf5: {os.path.join(output['fullpath'],'fb_acquisition.hdf5')}')
-    # Save images in a .hdf5 file
-    with h5py.File(os.path.join(output['fullpath'],'fb_acquisition.hdf5'), mode = 'w') as hdf5_file:
-        hdf5_file.create_dataset('entry/data/CRW_frames', data = frames)
-        hdf5_file.create_dataset('entry/data/data', data = images)
-        for key in output.keys():
-            hdf5_file.attrs[key] = output[key]
-        #Create a dac group to store dac values as attributes
-        g_dacs = hdf5_file.create_group('/dacs')
-        for dac in dacs.dacs.keys():
-            g_dacs.attrs[f'{dac} readback (V)'] = dacs.dacs[dac]['readback']
+    # Close the file and end the script
+    out_hdf5.close()
