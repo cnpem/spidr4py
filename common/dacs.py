@@ -250,26 +250,21 @@ class DACs:
       feedback = self.readDAC(dac_name,debug=False)
 
       #Compute the error from the target, decide if we need to move up or down
-      error = feedback - target_value
-      delta_dac_code = -1 if error>0 else 1
+      error = target_value - feedback
+      delta_dac_code = round(error/self.dacs[dac_name]['resolution'])
+      #print(f'Iteration {loop_counter}. Error {error:.3f}. Target {target_value:.3f}. Rbv {feedback:.3f}. Delta dac code {delta_dac_code}')
 
       #Calculate the next dac_code step
       dac_code = dac_code + delta_dac_code
 
-      #Set the DAC, read the new feedback and compute the new error
-      self.setDAC_lowlevel(dac_name,dac_code,debug=False)
-      new_feedback = self.readDAC(dac_name,debug=False)
-      new_error = new_feedback - target_value
-
-      #if errors are in different polarity they crossed the best value - so this one or the previous are the best choice
-      if (error*new_error) < 0:
-        #If the new one is worse, return to the previous dac step
-        if abs(new_error) > abs(error):
-          dac_code = dac_code - delta_dac_code
-          self.setDAC_lowlevel(dac_name,dac_code,debug=False)
-        #Get the current feedback and break the while loop
-        feedback = self.readDAC(dac_name,debug=False)
+      #If calculated delta is 0 break the loop
+      if delta_dac_code == 0:
         break
+      #else set the new DAC value
+      else:
+        #Set the DAC
+        self.setDAC_lowlevel(dac_name,dac_code,debug=False)
+
       loop_counter +=1
 
     #Return the loop counter, the last feedback value and the final dac_code
@@ -278,8 +273,8 @@ class DACs:
   def setDAC(self,dac_name,value,debug=True):
     if dac_name in self.dacs.keys():
       if self.dacs[dac_name]['bits'] == 8:
-        resolution_V = self.dacs[dac_name]['fullscale']/(2**(self.dacs[dac_name]['bits']))
-        dac_code = round(value/resolution_V)&0xFF
+        self.dacs[dac_name]['resolution'] = self.dacs[dac_name]['fullscale']/(2**(self.dacs[dac_name]['bits']))
+        dac_code = round(value/self.dacs[dac_name]['resolution'])&0xFF
         # Write DAC value
         self.setDAC_lowlevel(dac_name,dac_code,debug=False)
         feedback = self.readDAC(dac_name,debug=False)
@@ -303,20 +298,16 @@ class DACs:
           coarse = 2 #from 0 to LIN_RANGE_1
           V_START = 0
           V_END = 0.63
-          resolution_V = (V_END - V_START)/(2**10)
-          fine_adj = round((value-V_START)/resolution_V)
         elif value <= LIN_RANGE_2:
           coarse = 5 #from LIN_RANGE_1 to LIN_RANGE_2
           V_START = 0.34
           V_END = 0.89
-          resolution_V = (V_END - V_START)/(2**10)
-          fine_adj = round((value-V_START)/resolution_V)
         else:
           coarse = 8 #from LIN_RANGE_2 to saturation (1.150V)
           V_START = 0.59
           V_END = 1.15
-          resolution_V = (V_END - V_START)/(2**10)
-          fine_adj = round((value-V_START)/resolution_V)
+        self.dacs[dac_name]['resolution'] = (V_END - V_START)/(2**10)
+        fine_adj = round((value-V_START)/self.dacs[dac_name]['resolution'])
         dac_code = coarse << 10 | fine_adj
 
         # Write DAC value
