@@ -252,6 +252,11 @@ class DACs:
       #Compute the error from the target, decide if we need to move up or down
       error = target_value - feedback
       delta_dac_code = round(error/self.dacs[dac_name]['resolution'])
+
+      #When approaching the final value, slow down the delta dac to +1 or -1 depending on delta polarity
+      if abs(delta_dac_code) < 5:
+        delta_dac_code = (delta_dac_code > 0) - (delta_dac_code < 0)
+
       #print(f'Iteration {loop_counter}. Error {error:.3f}. Target {target_value:.3f}. Rbv {feedback:.3f}. Delta dac code {delta_dac_code}')
 
       #Calculate the next dac_code step
