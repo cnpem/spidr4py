@@ -106,7 +106,7 @@ ns = helpers.cl_parse(with_chip_idx=True, args={
 
 })
 
-TH_STEP_MAX = 80
+TH_STEP_MAX = 20
 th_step = (ns.th_high_e - ns.th_low_e)/(ns.n_points-1)
 if th_step < TH_STEP_MAX:
     print(f'WARNING: Threshold step is {th_step:.2f} electrons. Please consider to proceed with a step larger than {TH_STEP_MAX} electrons.')
