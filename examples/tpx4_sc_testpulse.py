@@ -26,11 +26,11 @@ if __name__ == "__main__":
 
         # Reset the pixel chips (will also load the default configuration)
         # ------------------------------------------------------------------------------------------------------
-        ctrl.ResetPixelChips(rpc.EMPTY)
+        #ctrl.ResetPixelChips(rpc.EMPTY)
 
         # Configure for test-pulse
         # ------------------------------------------------------------------------------------------------------
-        helpers.config_test_pulse(ctrl, tpx4, datastream, helpers.cl_chip_idx())
+        helpers.config_test_pulse(tpx4, helpers.cl_chip_idx())
 
         # Setup verification matrix
         # ------------------------------------------------------------------------------------------------------

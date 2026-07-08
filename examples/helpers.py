@@ -55,10 +55,8 @@ def cl_connect():
 def cl_chip_idx():
     return _cl_ns.chip_idx
 
-def config_test_pulse(ctrl, tpx4, datastream, chip_idx):
 
-
-
+def config_test_pulse(tpx4, chip_idx):
     # Configure event-based readout
     # ------------------------------------------------------------------------------------------------------
     readoutCfg = rpc.Tpx4ReadoutConfig(

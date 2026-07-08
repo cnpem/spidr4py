@@ -15,9 +15,10 @@ if __name__ == '__main__':
         si = sorted(dps.items, key=lambda x : x.id)
 
         t2f = {
-            rpc.BOOLEAN: ("{val!s}", lambda x: x.bool_value),
-            rpc.FLOAT:   ("{val:.2f}", lambda x: x.float_value),
             rpc.INT:     ("{val:d}", lambda x: x.int_value),
+            rpc.ULONG:   ("0x{val:X}", lambda x: x.ulong_value),
+            rpc.FLOAT:   ("{val:.2f}", lambda x: x.float_value),
+            rpc.BOOLEAN: ("{val!s}", lambda x: x.bool_value),
             rpc.STRING:  ("\"{val:s}\"", lambda x: x.string_value)
         }
         print(f"{'DataPoint ID':<34s} Valid {'Value':>12s}  [Units]")
