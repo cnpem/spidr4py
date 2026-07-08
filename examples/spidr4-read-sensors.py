@@ -20,7 +20,7 @@ if __name__ == '__main__':
 
         t2f = {
             rpc.INT:     ("{val:d}", lambda x: x.int_value),
-            rpc.ULONG:   ("0x{val:X}", lambda x: x.ulong_value),
+            rpc.ULONG:   ("0x{val:016X}", lambda x: x.ulong_value),
             rpc.FLOAT:   ("{val:.2f}", lambda x: x.float_value),
             rpc.BOOLEAN: ("{val!s}", lambda x: x.bool_value),
             rpc.STRING:  ("\"{val:s}\"", lambda x: x.string_value)
