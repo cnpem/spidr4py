@@ -46,7 +46,7 @@ with helpers.cl_connect() as channel:
 
     # Configure for test-pulse
     # ------------------------------------------------------------------------------------------------------
-    helpers.config_test_pulse(ctrl, tpx4, datastream, helpers.cl_chip_idx())
+    helpers.config_test_pulse(tpx4, helpers.cl_chip_idx())
 
     # Scan through all columns of the chip
     # ------------------------------------------------------------------------------------------------------

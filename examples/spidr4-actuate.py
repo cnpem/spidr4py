@@ -32,7 +32,7 @@ if __name__ == '__main__':
                 type = 4 # i.e. string type
 
     # Show what was selected
-    type_str = ["<none>", "int", "float", "bool", "string"] 
+    type_str = ["<none>", "int", "float", "bool", "string", "ulong"] 
     if name != "":
         print( f"Using: name={name}, val={val}, type={type} ({type_str[type]})" )
 
@@ -46,6 +46,7 @@ if __name__ == '__main__':
             si = sorted(dps.items, key=lambda x : x.id)
             t2f = {
                 rpc.INT:     ("{val:d}", lambda x: x.int_value),
+                rpc.ULONG:   ("0x{val:X}", lambda x: x.ulong_value),
                 rpc.FLOAT:   ("{val:.2f}", lambda x: x.float_value),
                 rpc.BOOLEAN: ("{val!s}", lambda x: x.bool_value),
                 rpc.STRING:  ("\"{val:s}\"", lambda x: x.string_value)
@@ -69,6 +70,8 @@ if __name__ == '__main__':
                 datapts.items.append( rpc.DataPoint(id=name, value=rpc.Value(type=3, bool_value=b_val)) )
             elif type == 4:
                 datapts.items.append( rpc.DataPoint(id=name, value=rpc.Value(type=4, string_value=s_val)) )
+            elif type == 5:
+                datapts.items.append( rpc.DataPoint(id=name, value=rpc.Value(type=5, ulong_value=s_val)) )
 
             # Execute
             peripherals.ActuateNow(datapts)

@@ -24,9 +24,10 @@ if __name__ == '__main__':
 
         # And display
         type2format = {
-            rpc.BOOLEAN: ("{val!s}", lambda x: x.bool_value),
+            rpc.INT:     ("{val:d}", lambda x: x.int_value),
+            rpc.ULONG:   ("{val:016X}", lambda x: x.ulong_value),
             rpc.FLOAT:   ("{val:.2f}", lambda x: x.float_value),
-            rpc.INT:     ("{val:d}", lambda x: x.int_value)
+            rpc.BOOLEAN: ("{val!s}", lambda x: x.bool_value)
         }
         for dp in datapts.items:
             vc = dp.value
