@@ -282,12 +282,9 @@ with helpers.cl_connect() as channel:
                 start_event_top.wait()
                 start_event_bot.wait()
 
-            #Clear the image array
-            img[:][:] = 0
+            #Compute the image array
+            img = np.sum(np.concatenate((decoder_bot.frames[shutter_open_frame:shutter_close_frame+1], np.rot90(decoder_top.frames[shutter_open_frame:shutter_close_frame+1], k = 2, axes=(1,2))), axis = 1),axis=0)
 
-            #Concatenate the frames
-            for idx in range(shutter_open_frame,shutter_close_frame+1):
-                img += np.concatenate((decoder_bot.frames[idx], np.rot90(decoder_top.frames[idx], 2)), axis = 0)
             #Append the image to the images array
             images.append(img)
 
