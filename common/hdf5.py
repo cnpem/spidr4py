@@ -79,6 +79,39 @@ class hdf5_nexus:
       print(f'Shape {img.shape} not supported. Please use {self.det_size}')
       sys.exit(1)
 
+  def create_2D_datasets(self,y_dict,x_key,x_units = ''):
+    self.len_2D_datasets = len(y_dict[x_key])
+    self.x_key = x_key
+    x_data = NXfield(y_dict[x_key], name=x_key, units=x_units)
+    #Do it for every key in the dictionary
+    for key in y_dict.keys():
+      #skip the x_key
+      if key == x_key:
+        continue
+      # Check if the array has the expected length
+      if len(y_dict[key]) == self.len_2D_datasets:
+        #Create the datasets
+        y_data = NXfield(y_dict[key], name=key)
+        self.file[f"entry/instrument/detector/{key}"] = NXdata(y_data, x_data)
+      else:
+        print(f'Length {len(y_dict[key])} different from expected X axis length {self.len_2D_datasets} for {key}')
+        sys.exit(1)
+
+  def fill_2D_datasets(self,y_dict):
+    #Do it for every key in the dictionary
+    for key in y_dict.keys():
+      #skip the x_key
+      if key == self.x_key:
+        continue
+      # Check if the array has the expected length
+      if len(y_dict[key]) == self.len_2D_datasets:
+        #Fill the dataset with the current value
+        self.file[f"entry/instrument/detector/{key}/{key}"] = y_dict[key]
+        self.file[f"entry/instrument/detector/{key}/{self.x_key}"] = y_dict[self.x_key]
+      else:
+        print(f'Length {len(y_dict[key])} different from expected X axis length {self.len_2D_datasets} for {key}')
+        sys.exit(1)
+
   def write_metadata(self,metadata = {}):
     if len(metadata) > 0:
       # write to /entry/instrument/metadata
@@ -121,6 +154,17 @@ if __name__=="__main__":
   # Write metadata to the file
   outfile.write_metadata(meta)
 
+  # Test 2D data
+  data_len = 10
+  x = np.array(range(data_len))
+  ys = {}
+  ys['y1'] = np.zeros(data_len)
+  ys['y2'] = np.zeros(data_len)
+  ys['y3'] = np.zeros(data_len)
+  ys['y4'] = np.zeros(data_len)
+
+  outfile.create_2D_datasets(ys,x,x_name = 'X test',x_units = 'Units')
+
   # Add images to the hdf5 file
   for i in range(21):
     print(f'Add image index {i}')
@@ -131,6 +175,12 @@ if __name__=="__main__":
     # Append all images to CRW frames
     outfile.append_image(img,field='CRWframes')
     time.sleep(1)
+
+  #Fill ys with random data
+  for key in ys.keys():
+    ys[key] = np.random.randn(data_len)
+
+  outfile.fill_2D_datasets(ys)
 
   # Close the file and end the script
   outfile.close()
