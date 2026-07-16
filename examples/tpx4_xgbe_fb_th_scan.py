@@ -22,7 +22,7 @@ import os
 import sys
 import datetime
 import matplotlib.pyplot as plt
-from argparse import ArgumentTypeError #argparse is used inside helpers
+from argparse import ArgumentTypeError,BooleanOptionalAction #argparse is used inside helpers
 import subprocess
 
 sys.path.insert(0, os.path.join(os.getcwd(),'..'))
@@ -102,8 +102,8 @@ ns = helpers.cl_parse(with_chip_idx=True, args={
     '--th_low_e':dict(type=int,default=0,help='Threshold low in e-'),
     '--th_high_e':dict(type=int,required=True,help='Threshold high in e-'),
     '--n_points':dict(required=False,type=int_greater_1,default=2,help='Number of threshold samples'),
-    '--repeat':dict(required=False,type=int,default=1,help='Number of repetitions per threshold sample')
-
+    '--repeat':dict(required=False,type=int,default=1,help='Number of repetitions per threshold sample'),
+    '--save-crw-frames':dict(action=BooleanOptionalAction,default=False,help='Save CRW frames in the HDF5 file'),
 })
 
 TH_STEP_MAX = 20
@@ -345,10 +345,11 @@ with helpers.cl_connect() as channel:
     capture_thread_top.join()
     capture_thread_bot.join()
 
-    # Concatenate botton and top matrixes to construct full images, considering valid frames
-    for i in range(min(len(decoder_top.frames),len(decoder_bot.frames))):
-        frame = np.concatenate((decoder_bot.frames[i], np.rot90(decoder_top.frames[i], 2)), axis = 0)
-        out_hdf5.append_image(frame,field='CRWframes')
+    if ns.save_crw_frames == True:
+        # Concatenate bottom and top matrixes to construct full images
+        for i in range(min(len(decoder_top.frames),len(decoder_bot.frames))):
+            frame = np.concatenate((decoder_bot.frames[i], np.rot90(decoder_top.frames[i], 2)), axis = 0)
+            out_hdf5.append_image(frame,field='CRWframes')
 
     #Sum the counts of valid images
     counter_sum = np.sum(images,axis=(1,2))

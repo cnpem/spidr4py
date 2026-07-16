@@ -98,6 +98,7 @@ ns = helpers.cl_parse(with_chip_idx=True, args={
     '--scale':dict(type=int,default=0,required=False,help='Adjust maximum scale value in the live viewer plots. 0 means autoscale'),
     '--auto-shutter':dict(action=BooleanOptionalAction,default=False,help='Retrigger shutter when readout finishes'),
     '--live-viewer':dict(action=BooleanOptionalAction,default=False,help='Open a simple live viewer to see current image. This can affects readout performance'),
+    '--save-crw-frames':dict(action=BooleanOptionalAction,default=False,help='Save CRW frames in the HDF5 file'),
 })
 
 # # Main loop, create network connection
@@ -311,9 +312,11 @@ with helpers.cl_connect() as channel:
     #Send signal to stop read threads after the current frame
     stop_event.set()
 
-    for idx in range(min(len(decoder_bot.frames),len(decoder_top.frames))):
-        frame = np.concatenate((decoder_bot.frames[idx], np.rot90(decoder_top.frames[idx], 2)), axis = 0)
-        out_hdf5.append_image(frame,field='CRWframes')
+    if ns.save_crw_frames == True:
+        # Concatenate bottom and top matrixes to construct full images
+        for idx in range(min(len(decoder_bot.frames),len(decoder_top.frames))):
+            frame = np.concatenate((decoder_bot.frames[idx], np.rot90(decoder_top.frames[idx], 2)), axis = 0)
+            out_hdf5.append_image(frame,field='CRWframes')
 
     status = trigger.GetStatus(rpc.EMPTY)           # get trigger status
     print(f"Finishing with {status.shutter_counter} shutters")
