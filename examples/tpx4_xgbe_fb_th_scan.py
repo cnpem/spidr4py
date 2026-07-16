@@ -138,7 +138,7 @@ with helpers.cl_connect() as channel:
 
     #Instantiate DAC class without initialzie DAC (do not override configuration)
     # ------------------------------------------------------------------------------------------------------
-    dacs = dacs.DACs(tpx4,helpers.cl_chip_idx(),adc_half='TOP',adc='internal',debug=True, initialize=False)
+    dacs = dacs.DACs(tpx4,helpers.cl_chip_idx(),debug=True, load_dacs=False)
 
     #Read if shutter control packets are enabled
     ans = tpx4.ReadReg(
@@ -258,7 +258,6 @@ with helpers.cl_connect() as channel:
     output_data['Threshold DAC readback (V)'] = np.zeros(ns.n_points)
     output_data['FBK DAC readback (V)'] = np.zeros(ns.n_points)
     output_data['Threshold dac code'] = np.zeros(ns.n_points)
-    output_data['FBK dac code'] = np.zeros(ns.n_points)
 
     output_data['Counts Sum'] = np.zeros(ns.n_points)
     output_data['Maximum Counts'] = np.zeros(ns.n_points)
@@ -281,7 +280,6 @@ with helpers.cl_connect() as channel:
         output_data['Threshold DAC readback (V)'][index] = dacs.dacs['VThreshold']['readback']
         output_data['FBK DAC readback (V)'][index] = dacs.dacs['VFBK']['readback']
         output_data['Threshold dac code'][index] = dacs.dacs['VThreshold']['dac_code']
-        output_data['FBK dac code'][index] = dacs.dacs['VFBK']['dac_code']
 
         for i in range(ns.repeat):
 

@@ -141,7 +141,7 @@ with helpers.cl_connect() as channel:
 
     #Instantiate DAC class without initialize DACs (do not override configuration from tpx4_fb_config_fast.py script)
     # ------------------------------------------------------------------------------------------------------
-    dacs = dacs.DACs(tpx4,helpers.cl_chip_idx(),adc_half='TOP',adc='internal',debug=True, initialize=False, dac_mode=ns.dac_mode)
+    dacs = dacs.DACs(tpx4,helpers.cl_chip_idx(),adc_half='TOP',adc='internal',debug=True, load_dacs=False)
 
     print(f'Configure threshold to 0 e-.')
     dacs.conf_threshold(THR_e=0,debug=True)
@@ -219,7 +219,6 @@ with helpers.cl_connect() as channel:
 
     for dac_code in output_data['dac_codes']:
 
-        # Remark: threshold is set to 0 e by tpx4_fb_config_fast.py script
         print('-----------------------------------------------------------')
         print(f'Sending dac_code {dac_code} to the chip')
 
