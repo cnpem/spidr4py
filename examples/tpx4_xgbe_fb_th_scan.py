@@ -276,7 +276,7 @@ with helpers.cl_connect() as channel:
     for index,th in enumerate(output_data['Threshold Target (e)']):
         # Configure threshold in e. Polarity = 0 means electrons collection
         print('-----------------------------------------------------------')
-        output_data['Threshold Readback'][index] = dacs.conf_threshold(THR_e=th,force_FBK=True,debug=True)
+        output_data['Threshold Readback'][index] = dacs.conf_threshold(THR_e=th,debug=True)
 
         output_data['Threshold DAC readback (V)'][index] = dacs.dacs['VThreshold']['readback']
         output_data['FBK DAC readback (V)'][index] = dacs.dacs['VFBK']['readback']

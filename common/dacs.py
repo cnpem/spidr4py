@@ -364,8 +364,6 @@ class DACs:
 
   def conf_threshold(self,
                   THR_e=1000,
-                  FBK_V=None,
-                  force_FBK=True,
                   debug=True):
 
     # Nominal calculation of gain does not represent the real gain, Timepix4 CSA parasitic capacitance is around 1.7fF
@@ -376,29 +374,28 @@ class DACs:
     #Gain_Ve = 1.6e-19/Cf
     #We will use the value from Xavi scripts in V/e
 
-    if FBK_V == None:
-      FBK_V = self.dacs['VFBK'][self.dac_mode]
-
+    #Store gain value
     Gain_Ve = 20.5e-6 if self.low_gain else 34.5e-6
 
+    #Calculate the voltage delta between FBK and THR DACs
     THR_FBK_V=THR_e*Gain_Ve
 
-    #Force FBK or only readback the value
-    if force_FBK:
-      rb_fbk = self.setDAC('VFBK',value=FBK_V,debug=debug)
-    else:
-      rb_fbk = self.readDAC('VFBK',debug=debug)
+    #readback FBK voltage
+    rb_fbk = self.readDAC('VFBK',debug=debug)
 
+    #Calculate the new threshold
     THR_V = (rb_fbk - THR_FBK_V) if self.hole_polarity else (rb_fbk + THR_FBK_V)
 
+    #Set the DAC
     rb_th = self.setDAC('VThreshold',value=THR_V,debug=debug)
 
+    #Compute the readback threshold
     meas_threshold_v = (rb_fbk - rb_th) if self.hole_polarity else (rb_th - rb_fbk)
     meas_threshold_e = meas_threshold_v/Gain_Ve
 
     if debug:
         print(f'Operation threshold target: {THR_e} e. Threshold measured {meas_threshold_e} e')
-        print(f'DAC VFBK target {FBK_V:.3f}. Measured {rb_fbk:.3f}')
+        print(f'DAC VFBK measured {rb_fbk:.3f}')
         print(f'DAC VThreshold target {THR_V:.3f}. Measured {rb_th:.3f}')
 
     return meas_threshold_e
