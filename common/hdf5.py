@@ -46,7 +46,7 @@ class hdf5_nexus:
     )
 
     # store the data in the NXdetector group
-    self.file["entry/instrument/detector/data"] = NXfield(np.ones((0,self.det_size[0],self.det_size[1])),maxshape=(None,self.det_size[0],self.det_size[1]), units="counts", chunks=True, name= 'data',dtype=np.uint64)
+    self.file["entry/instrument/detector/data"] = NXfield(np.ones((0,self.det_size[0],self.det_size[1])),maxshape=(None,self.det_size[0],self.det_size[1]), units="counts", chunks=True, name= 'data',dtype=np.uint32)
 
     # create a dataset for CRWframes
     self.file["entry/instrument/detector/CRWframes"] = NXfield(np.ones((0,self.det_size[0],self.det_size[1])),maxshape=(None,self.det_size[0],self.det_size[1]), units="counts", chunks=True, name= 'CRWframes',dtype=np.uint16)
