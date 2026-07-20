@@ -19,11 +19,10 @@ import threading
 import queue
 import numpy as np
 import os
-import h5py
 import sys
 import datetime
 import matplotlib.pyplot as plt
-from argparse import ArgumentTypeError #argparse is used inside helpers
+from argparse import ArgumentTypeError,BooleanOptionalAction #argparse is used inside helpers
 import subprocess
 
 sys.path.insert(0, os.path.join(os.getcwd(),'..'))
@@ -35,6 +34,7 @@ from spidr4 import rpc,utils, stream
 import helpers
 import fb_modules
 from common import dacs
+from common import hdf5
 
 #Global shared variables and semaphore
 current_frame = 0
@@ -102,8 +102,8 @@ ns = helpers.cl_parse(with_chip_idx=True, args={
     '--th_low_e':dict(type=int,default=0,help='Threshold low in e-'),
     '--th_high_e':dict(type=int,required=True,help='Threshold high in e-'),
     '--n_points':dict(required=False,type=int_greater_1,default=2,help='Number of threshold samples'),
-    '--repeat':dict(required=False,type=int,default=1,help='Number of repetitions per threshold sample')
-
+    '--repeat':dict(required=False,type=int,default=1,help='Number of repetitions per threshold sample'),
+    '--save-crw-frames':dict(action=BooleanOptionalAction,default=False,help='Save CRW frames in the HDF5 file'),
 })
 
 TH_STEP_MAX = 20
@@ -205,13 +205,38 @@ with helpers.cl_connect() as channel:
     output['fullpath'] = os.path.join(os.getcwd(),ns.path,f'{output['datetime']}_{ns.testname}')
     os.makedirs(output['fullpath'],exist_ok=True)
 
-    #Create output data dictionary
-    output_data = {}
+    #Get Spidr4 and Timepix info
+    # Get the version
+    version = ctrl.GetVersion(rpc.EMPTY)
+    output[version.product]=f"{version.majr}.{version.minr}.{version.patch} (git-info={version.commit_info})"
+    fwversion = ctrl.GetFirmwareVersion(rpc.EMPTY)
+    output[fwversion.product]=f"{fwversion.majr}.{fwversion.minr}.{fwversion.patch} (git-info={fwversion.commit_info})"
 
-    #Build the threshold array to iterate
-    output_data['threshold_target'] = np.linspace(ns.th_low_e,ns.th_high_e,ns.n_points)
+    serial = ctrl.GetSerial(rpc.EMPTY)
+    output['SPIDR4 serial']=f"{serial.value:016x}"
 
-    output_data['Threshold Readback (e)'] = []
+    carrier = ctrl.GetChipBoardInfo(rpc.EMPTY)
+    output['Chipboard Type'] = carrier.type
+    output['Chipboard Serial'] = carrier.serial
+
+    chips = ctrl.GetPixelChipInfo(rpc.EMPTY)
+    if len(chips.items) > 1:
+        print(f'ERROR: equalization script does not support boards with {len(chips.items)} chips')
+        sys.exit(1)
+    else:
+        chip = chips.items[0]
+        output['Chip Type'] = rpc.PixelChipType.Name(chip.type)
+        output['Chip Revision'] = chip.revision
+        output['Chip ID'] = f'{chip.chip_id:08x}'
+
+    #Save output parameters
+    output['exposure time (us)'] = ns.exposure_time_us
+
+    # Create the hdf5 output file
+    out_hdf5 = hdf5.hdf5_nexus(os.path.join(output['fullpath'],'th-scan.hdf5'),serial_number = ctrl.GetChipBoardInfo(rpc.EMPTY).serial)
+
+    #Append metadata to output file
+    out_hdf5.write_metadata(output)
 
     #Create output for dacs readback values
     output_dacs = {}
@@ -220,13 +245,27 @@ with helpers.cl_connect() as channel:
     for dac in dacs.dacs.keys():
         output_dacs[f'{dac} readback (V)'] = dacs.dacs[dac]['readback']
 
-    #Create a data dict for specific DAC monitoring values
-    output_dacs_data = {}
+    out_hdf5.write_metadata(output_dacs)
 
-    output_dacs_data['Threshold DAC readback (V)'] = []
-    output_dacs_data['FBK DAC readback (V)'] = []
-    output_dacs_data['Threshold dac code'] = []
-    output_dacs_data['FBK dac code'] = []
+    #Create output data dictionary
+    output_data = {}
+
+    #Build the threshold array to iterate
+    output_data['Threshold Target (e)'] = np.linspace(ns.th_low_e,ns.th_high_e,ns.n_points)
+
+    output_data['Threshold Readback'] = np.zeros(ns.n_points)
+
+    output_data['Threshold DAC readback (V)'] = np.zeros(ns.n_points)
+    output_data['FBK DAC readback (V)'] = np.zeros(ns.n_points)
+    output_data['Threshold dac code'] = np.zeros(ns.n_points)
+    output_data['FBK dac code'] = np.zeros(ns.n_points)
+
+    output_data['Counts Sum'] = np.zeros(ns.n_points)
+    output_data['Maximum Counts'] = np.zeros(ns.n_points)
+    output_data['Mean Counts'] = np.zeros(ns.n_points)
+
+    # It is necessary to create all datasets before open hdf5 file
+    out_hdf5.create_2D_datasets(output_data,'Threshold Readback',x_units = 'e')
 
     #Valid images array
     images = []
@@ -234,19 +273,19 @@ with helpers.cl_connect() as channel:
     #Create an image
     img = np.zeros((512,448))
 
-    for index,th in enumerate(output_data['threshold_target']):
+    for index,th in enumerate(output_data['Threshold Target (e)']):
         # Configure threshold in e. Polarity = 0 means electrons collection
         print('-----------------------------------------------------------')
-        output_data['Threshold Readback (e)'].append(dacs.conf_threshold(THR_e=th,force_FBK=True,debug=True))
+        output_data['Threshold Readback'][index] = dacs.conf_threshold(THR_e=th,force_FBK=True,debug=True)
 
-        output_dacs_data['Threshold DAC readback (V)'].append(dacs.dacs['VThreshold']['readback'])
-        output_dacs_data['FBK DAC readback (V)'].append(dacs.dacs['VFBK']['readback'])
-        output_dacs_data['Threshold dac code'].append(dacs.dacs['VThreshold']['dac_code'])
-        output_dacs_data['FBK dac code'].append(dacs.dacs['VFBK']['dac_code'])
+        output_data['Threshold DAC readback (V)'][index] = dacs.dacs['VThreshold']['readback']
+        output_data['FBK DAC readback (V)'][index] = dacs.dacs['VFBK']['readback']
+        output_data['Threshold dac code'][index] = dacs.dacs['VThreshold']['dac_code']
+        output_data['FBK dac code'][index] = dacs.dacs['VFBK']['dac_code']
 
         for i in range(ns.repeat):
 
-            print(f'Threshold scan step {index+1}/{ns.n_points}: th target {th:.2f} e-. Measured {output_data['Threshold Readback (e)'][index]:.2f}. Repetition {i+1}/{ns.repeat}')
+            print(f'Threshold scan step {index+1}/{ns.n_points}: th target {th:.2f} e-. Measured {output_data['Threshold Readback'][index]:.2f}. Repetition {i+1}/{ns.repeat}')
 
             #clear start flags
             start_event_top.clear()
@@ -287,6 +326,8 @@ with helpers.cl_connect() as channel:
 
             #Append the image to the images array
             images.append(img)
+            #And save it to the HDF5 file
+            out_hdf5.append_image(img,field='data')
 
     #clear start flags
     start_event_top.clear()
@@ -304,52 +345,36 @@ with helpers.cl_connect() as channel:
     capture_thread_top.join()
     capture_thread_bot.join()
 
-    # Concatenate botton and top matrixes to construct full images, considering valid frames
-    frames = []
-    for i in range(min(len(decoder_top.frames),len(decoder_bot.frames))):
-        frames.append(np.concatenate((decoder_bot.frames[i], np.rot90(decoder_top.frames[i], 2)), axis = 0))
+    if ns.save_crw_frames == True:
+        # Concatenate bottom and top matrixes to construct full images
+        for i in range(min(len(decoder_top.frames),len(decoder_bot.frames))):
+            frame = np.concatenate((decoder_bot.frames[i], np.rot90(decoder_top.frames[i], 2)), axis = 0)
+            out_hdf5.append_image(frame,field='CRWframes')
 
     #Sum the counts of valid images
     counter_sum = np.sum(images,axis=(1,2))
     counter_max = np.max(images,axis=(1,2))
     counter_mean = np.mean(images,axis=(1,2))
-    output_data['sum_per_image'] = counter_sum
 
-    #Calculated the mean for repeated images
-    output_data['sum_per_threshold'] = []
-    output_data['max_per_threshold'] = []
-    output_data['mean_per_threshold'] = []
     for i in range(ns.n_points):
-        output_data['sum_per_threshold'].append(np.sum(counter_sum[i*ns.repeat:(i+1)*ns.repeat])/ns.repeat)
-        output_data['max_per_threshold'].append(np.max(counter_max[i*ns.repeat:(i+1)*ns.repeat]))
-        output_data['mean_per_threshold'].append(np.mean(counter_mean[i*ns.repeat:(i+1)*ns.repeat]))
+        output_data['Counts Sum'][i] = np.sum(counter_sum[i*ns.repeat:(i+1)*ns.repeat])/ns.repeat
+        output_data['Maximum Counts'][i] = np.max(counter_max[i*ns.repeat:(i+1)*ns.repeat])
+        output_data['Mean Counts'][i] = np.mean(counter_mean[i*ns.repeat:(i+1)*ns.repeat])
 
-    # Save output files
-    # ------------------------------------------------------------------------------------------------------
-    print(f'Saving output hdf5: {os.path.join(output['fullpath'],'th-scan.hdf5')}')
-    # Save images in a .hdf5 file
-    with h5py.File(os.path.join(output['fullpath'],'th-scan.hdf5'), mode = 'w') as hdf5_file:
-        hdf5_file.create_dataset('entry/data/data', data = images)
-        hdf5_file.create_dataset('entry/data/CRW_frames', data = frames)
-        for key in output.keys():
-            hdf5_file.attrs[key] = output[key]
-        for key in output_data.keys():
-            hdf5_file.create_dataset(f'entry/data/{key}', data = output_data[key])
-        g_dacs = hdf5_file.create_group('entry/dacs')
-        for dacs_readback in output_dacs.keys():
-            g_dacs.attrs[dacs_readback] = output_dacs[dacs_readback]
-        for key in output_dacs_data.keys():
-            g_dacs.create_dataset(key, data = output_dacs_data[key])
+    #Sort arrays accordingly to the readback threshold
+    sorted_indexes = np.argsort(output_data['Threshold Readback'])
+    for key in output_data.keys():
+        output_data[key] = output_data[key][sorted_indexes]
 
-    #Sort threshold readback array and counts accordingly to the readback threshold
-    output_data['Threshold Readback (e)'] = np.array(output_data['Threshold Readback (e)'])
-    output_data['sum_per_threshold'] = np.array(output_data['sum_per_threshold'])
-    th_readback_sorted = output_data['Threshold Readback (e)'][np.argsort(output_data['Threshold Readback (e)'])]
-    sum_sorted = output_data['sum_per_threshold'][np.argsort(output_data['Threshold Readback (e)'])]
+    # Edit 2D datasets values
+    out_hdf5.fill_2D_datasets(output_data)
+
+    #Close the HDF5 file
+    out_hdf5.close()
 
     #Plot the figure
     plt.figure()
-    plt.plot(th_readback_sorted,sum_sorted,'-o')
+    plt.plot(output_data['Threshold Readback'],output_data['Counts Sum'],'-o')
     plt.title(f'Threshold Scan - {ns.exposure_time_us} us exposure')
     plt.xlabel('Threshold (e)')
     plt.ylabel('Counts Sum')
