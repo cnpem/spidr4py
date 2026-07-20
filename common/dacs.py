@@ -17,6 +17,8 @@
 
 from spidr4 import rpc
 import sys
+import os
+import json
 
 LOOP_MAX_ITERATIONS = 200
 
@@ -185,15 +187,20 @@ dacs_lib = {
 }
 
 class DACs:
-  def __init__(self,tpx4_stub,chip_index, adc_half='TOP',adc='internal',initialize=True, debug=True, dac_mode = 'fb_default'):
+  def __init__(self,tpx4_stub,chip_index, adc_half='TOP',adc='internal', load_dacs=False, debug=True,config_path = ''):
 
     self.tpx4 = tpx4_stub
     self.debug = debug
     self.chip_index = chip_index
-    self.dac_mode = dac_mode
     self.dacs = dacs_lib
 
-    print(f'Setting dacs to dac mode {dac_mode}')
+    #Define default dac_mode hardcoded
+    self.dac_mode = 'fb_default'
+
+    #Define the dacs filename
+    dacs_filename = 'dacs.json'
+    dacs_filepath = os.path.join(config_path,dacs_filename)
+
     #Check adc half matrix validity
     match adc_half.upper():
       case 'BOT':
@@ -224,20 +231,41 @@ class DACs:
     #print(f'Polarity: {readout_config.polarity}')
     #print(f'Gain: {readout_config.gain}')
 
+    #Check for the DACs file only if load DACs is true
+    if load_dacs == True:
+      #Check for the dacs config file
+      if os.path.isfile(dacs_filepath):
+        print(f'DACs file found: {dacs_filepath}')
+        with open(dacs_filepath, 'r') as f:
+          dacs = json.load(f)
+
+      #If it is not available, create one using default config
+      else:
+        print(f'Creating DACs file from dac mode {self.dac_mode}.')
+        dacs = {}
+        for dac,data in self.dacs.items():
+          dacs[dac] = data[self.dac_mode]
+        with open(dacs_filepath, 'w') as f:
+          json.dump(dacs, f, indent=4)
+          print(f'File created {dacs_filepath}')
+
+    #Load DACs if needed and readout always
     for dac,data in self.dacs.items():
       #Set DAC default value
-      if dac_mode in data.keys():
-        if initialize == True:
-          if debug: print(f'Set DAC {dac} to default value {data[dac_mode]:.3G} {data['unit']} ')
-          self.setDAC(dac,value=data[dac_mode],debug=self.debug)
+        if load_dacs == True:
+          if dac in dacs.keys():
+            if debug: print(f'Set DAC {dac} to value {data[self.dac_mode]:.3G} {data['unit']} ')
+            self.dacs[dac]['setpoint'] = dacs[dac]
+            self.setDAC(dac,value=dacs[dac],debug=self.debug)
+          else:
+            print(f'ERROR: dac {dac} not found in DACs file!')
+            sys.exit(1)
         else:
-          #Initialize dac_code as None
+          #Initialize dac_code and setpoint as 0
           self.dacs[dac]['dac_code'] = None
+          self.dacs[dac]['setpoint'] = None
         #Read DAC on debug mode (populate readback value in dictionary)
         self.readDAC(dac,debug=self.debug)
-      else:
-        print(f'ERROR: dac_mode {dac_mode} not found!')
-        sys.exit(1)
 
   def linearize_voltage_dac(self,dac_name,target_value,initial_dac_code):
     #Start to linearize from the initial value
@@ -364,8 +392,6 @@ class DACs:
 
   def conf_threshold(self,
                   THR_e=1000,
-                  FBK_V=None,
-                  force_FBK=True,
                   debug=True):
 
     # Nominal calculation of gain does not represent the real gain, Timepix4 CSA parasitic capacitance is around 1.7fF
@@ -376,29 +402,28 @@ class DACs:
     #Gain_Ve = 1.6e-19/Cf
     #We will use the value from Xavi scripts in V/e
 
-    if FBK_V == None:
-      FBK_V = self.dacs['VFBK'][self.dac_mode]
-
+    #Store gain value
     Gain_Ve = 20.5e-6 if self.low_gain else 34.5e-6
 
+    #Calculate the voltage delta between FBK and THR DACs
     THR_FBK_V=THR_e*Gain_Ve
 
-    #Force FBK or only readback the value
-    if force_FBK:
-      rb_fbk = self.setDAC('VFBK',value=FBK_V,debug=debug)
-    else:
-      rb_fbk = self.readDAC('VFBK',debug=debug)
+    #readback FBK voltage
+    rb_fbk = self.readDAC('VFBK',debug=debug)
 
+    #Calculate the new threshold
     THR_V = (rb_fbk - THR_FBK_V) if self.hole_polarity else (rb_fbk + THR_FBK_V)
 
+    #Set the DAC
     rb_th = self.setDAC('VThreshold',value=THR_V,debug=debug)
 
+    #Compute the readback threshold
     meas_threshold_v = (rb_fbk - rb_th) if self.hole_polarity else (rb_th - rb_fbk)
     meas_threshold_e = meas_threshold_v/Gain_Ve
 
     if debug:
         print(f'Operation threshold target: {THR_e} e. Threshold measured {meas_threshold_e} e')
-        print(f'DAC VFBK target {FBK_V:.3f}. Measured {rb_fbk:.3f}')
+        print(f'DAC VFBK measured {rb_fbk:.3f}')
         print(f'DAC VThreshold target {THR_V:.3f}. Measured {rb_th:.3f}')
 
     return meas_threshold_e

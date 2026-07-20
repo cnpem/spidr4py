@@ -2,11 +2,11 @@
 
 #############################################################################################################
 #
-#  tpx4_fb_fast.py
-#  
+#  tpx4_fb_config_fast.py
+#
 #  Performs frame-based configuration using 10G interface or Optical Fast Linkes (Firefly)
 #
-#  Authors: 
+#  Authors:
 #   Mauricio Donatti <mauricio.donatti@lnls.br>
 #
 #  July 2025
@@ -25,7 +25,6 @@ from spidr4 import rpc, utils
 
 #Import repository modules and functions
 import helpers
-from common import dacs
 
 ns = helpers.cl_parse(with_chip_idx=True, args={
     "iface": dict(help="Network interface for Spidr4 10G link", type=str, nargs='?'),
@@ -194,13 +193,6 @@ with helpers.cl_connect() as channel:
         )
     )
 
-    #Configure DACs
-    # ------------------------------------------------------------------------------------------------------
-    dacs = dacs.DACs(tpx4,helpers.cl_chip_idx(),adc_half='TOP',adc='internal',debug=True,dac_mode=ns.dac_mode, initialize=ns.dac_load)
-
-    # Configure threshold in e. Polarity = 0 means electrons collection
-    dacs.conf_threshold(THR_e=ns.th_e,debug=True)
-
     # Configure status monitor configuration
     # ------------------------------------------------------------------------------------------------------
     tpx4.StatusMonSetConfig(
@@ -256,7 +248,7 @@ with helpers.cl_connect() as channel:
 
     #Configure CRW_WAIT_TIME Bottom and Top registers
     for reg in [0xC202,0x4202]:#['CRW_WAIT_TIME_TOP','CRW_WAIT_TIME_BOTTOM']
-    
+
         tpx4.WriteReg(
             rpc.WriteRegRequest(
                 idx=0,

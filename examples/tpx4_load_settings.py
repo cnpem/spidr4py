@@ -2,12 +2,12 @@
 
 #############################################################################################################
 #
-#  tpx4_load_equalization.py
-#  
-#  Load equalization to the Timepix4
+#  tpx4_load_settings.py
+#
+#  Load configuration to the Timepix4
 #
 #
-#  Authors: 
+#  Authors:
 #   Matheus Gimenez Fernandes <matheus.fernandes@lnls.br>
 #   Mauricio Donatti <mauricio.donatti@lnls.br>
 #
@@ -29,6 +29,7 @@ from spidr4 import rpc, tpx4tools
 
 #Import custom repository modules
 import helpers
+from common import dacs
 
 ARRAY_SIZE_X = 448
 ARRAY_SIZE_Y = 512
@@ -47,9 +48,7 @@ def parse_tuples_pairs(s):
         raise ArgumentTypeError(f"Invalid format: {s}. Error: {e}")
 
 ns = helpers.cl_parse(with_chip_idx=True, args={
-    '--equalization-path':dict(type=str,default='config/{chipboard_serial_number}/{chip_id}/',help='path to equalization files'),
-    '--dac-codes-file':dict(type=str,default='eq_codes_fb.dat',help='dac codes filename'),
-    '--mask-file':dict(type=str,default='eq_mask_fb.dat',help='mask bit filename'),
+    '--config-path':dict(type=str,default='config/{chipboard_serial_number}/{chip_id}/',help='path to config directory'),
     '--to-mask':dict(type=parse_tuples_pairs,default=(),nargs='+',help='mask additional pixels. Send pixels as tuples: Y1,X1 Y2,X2'),
 })
 
@@ -62,9 +61,12 @@ with helpers.cl_connect() as channel:
 
     # Configure Pixel Matrix - load equalization and mask bits
     # ------------------------------------------------------------------------------------------------------
-    mask_file = ns.mask_file
-    eq_file = ns.dac_codes_file
-    if ns.equalization_path == 'config/{chipboard_serial_number}/{chip_id}/':
+
+    #Standard filenames for mask and dac codes
+    mask_file = 'eq_mask_fb.dat'
+    eq_file = 'eq_codes_fb.dat'
+
+    if ns.config_path == 'config/{chipboard_serial_number}/{chip_id}/':
         #get the control service
         ctrl = rpc.ControlInfoStub(channel)
         #get chipboard carrier information
@@ -75,9 +77,20 @@ with helpers.cl_connect() as channel:
         chip = chips.items[0]
         config_dir = f'config/{carrier.serial}/{chip.chip_id:08x}/'
     else:
-        config_dir = ns.equalization_path
+        config_dir = ns.config_path
 
-    if os.path.isdir(config_dir) and os.path.isfile(os.path.join(config_dir,eq_file)) and os.path.isfile(os.path.join(config_dir,mask_file)):
+    #Create the dir if it does not exist
+    os.makedirs(config_dir, exist_ok=True)
+
+    #Configure DACs
+    # ------------------------------------------------------------------------------------------------------
+    print('------------------------------------------------------------------------------------------------------------')
+    print(f'Loading DACs to the chip')
+    dacs = dacs.DACs(tpx4,helpers.cl_chip_idx(),debug=True, load_dacs=True, config_path = config_dir)
+    print('------------------------------------------------------------------------------------------------------------')
+
+    #Load Equalization
+    if os.path.isfile(os.path.join(config_dir,eq_file)) and os.path.isfile(os.path.join(config_dir,mask_file)):
 
         print(f'Loading equalization directory: {config_dir}')
         print(f'Loading dac codes from {eq_file}')
@@ -117,4 +130,4 @@ with helpers.cl_connect() as channel:
                 )
         )
     else:
-        print(f"ERROR: {config_dir} is not a valid path or equalization files not found. Aborting equalization")
+        print(f"WARNING: Equalization and/or mask bits files not found. Consider to run tpx4_xgbe_fb_gen_equalization.py to create the equalization and mask bits files")

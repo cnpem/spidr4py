@@ -3,10 +3,10 @@
 #############################################################################################################
 #
 #  tpx4_xgbe_fb_th_scan.py
-#  
+#
 #  Performs frame-based threshold scan using 10G interface.
 #
-#  Authors: 
+#  Authors:
 #   Mauricio Donatti <mauricio.donatti@lnls.br>
 #
 #  September 2025
@@ -97,7 +97,7 @@ with helpers.cl_connect() as channel:
 
     #Instantiate DAC class without initialzie DAC (do not override configuration)
     # ------------------------------------------------------------------------------------------------------
-    dacs = dacs.DACs(tpx4,helpers.cl_chip_idx(),adc_half='TOP',adc='internal',debug=True, initialize=False)
+    dacs = dacs.DACs(tpx4,helpers.cl_chip_idx(),adc_half='TOP',adc='internal',debug=True, load_dacs=False)
     dacs.conf_threshold(THR_e=ns.th_e)
 
     #Read if shutter control packets are enabled
