@@ -200,7 +200,7 @@ with helpers.cl_connect() as channel:
             idx=helpers.cl_chip_idx(),
             enable=ns.status_packets,                   #Enable status and monitoring packet generation (output status packets in the data stream)
             heartbeat=False,                            #Enable the heartbeat (periodical status packets)
-            heartbeat_shift=0,                          #Heartbeat shift. A heartbeat is send every (1 << heatbeat_shift) * 25 ns.
+            heartbeat_shift=15,                         #Heartbeat shift. A heartbeat is send every (1 << heatbeat_shift) * 25 ns. Required in v2.6.1: must be between 6..23 even if heartbeat is off
             global_time_reset=False,                    #Resets the global time on T0-sync
             global_time=False,                          #Enable the glboal time counter in status packets (48bit)
             ctrl_data_test=False,                       #Enable sending constant data-test packets
