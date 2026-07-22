@@ -35,7 +35,7 @@ ns = helpers.cl_parse(with_chip_idx=True, args={
     "--xgbe-port": dict(help="10 GbE port", type=int, default=8192),
     "--crw-time-us": dict(type=int,default=1000000,help='Continuous read-write time in microseconds'),
     '--counter': dict(choices=['8bit','16bit'],default='8bit',help='Frame based counter depth'),
-    '--reset': dict(action=BooleanOptionalAction,default=False,help='reset Timepix4 ASIC at the beginning'),
+    '--reset': dict(action=BooleanOptionalAction,default=True,help='reset Timepix4 ASIC at the beginning'),
     '--status-packets':dict(action=BooleanOptionalAction,default=False,help='Enables sending output status packets in the data stream (for example, Shutter Rise/Fall)'),
     '--force-T0sync':dict(action=BooleanOptionalAction,default=True,help='Force to send T0Sync, even without reset'),
     '--polarity': dict(choices=['h','e'],default='e',help='Charge collection'),
