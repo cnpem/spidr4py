@@ -249,6 +249,9 @@ class DACs:
           json.dump(dacs, f, indent=4)
           print(f'File created {dacs_filepath}')
 
+    #Get current DACs list to find dac_codes
+    dacs_list = self.tpx4.GetDacs(rpc.EMPTY).items
+
     #Load DACs if needed and readout always
     for dac,data in self.dacs.items():
       #Set DAC default value
@@ -261,9 +264,9 @@ class DACs:
             print(f'ERROR: dac {dac} not found in DACs file!')
             sys.exit(1)
         else:
-          #Initialize dac_code and setpoint as 0
-          self.dacs[dac]['dac_code'] = None
+          #Initialize dac_code with the current register value and setpoint as None
           self.dacs[dac]['setpoint'] = None
+          self.dacs[dac]['dac_code'] = [filtered_dac.value for filtered_dac in dacs_list if self.dacs[dac]['DAC'] == filtered_dac.dac][0]
         #Read DAC on debug mode (populate readback value in dictionary)
         self.readDAC(dac,debug=self.debug)
 
