@@ -244,7 +244,7 @@ with helpers.cl_connect() as channel:
     #Append dacs to output_dacs
     for dac in dacs.dacs.keys():
         output_dacs[f'{dac} readback (V)'] = dacs.dacs[dac]['readback']
-
+        output_dacs[f'{dac} dac code'] = dacs.dacs[dac]['dac_code']
     out_hdf5.write_metadata(output_dacs)
 
     #Create output data dictionary
