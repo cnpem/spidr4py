@@ -106,16 +106,6 @@ ns = helpers.cl_parse(with_chip_idx=True, args={
     '--save-crw-frames':dict(action=BooleanOptionalAction,default=False,help='Save CRW frames in the HDF5 file'),
 })
 
-TH_STEP_MAX = 20
-th_step = (ns.th_high_e - ns.th_low_e)/(ns.n_points-1)
-if th_step < TH_STEP_MAX:
-    print(f'WARNING: Threshold step is {th_step:.2f} electrons. Please consider to proceed with a step larger than {TH_STEP_MAX} electrons.')
-    res = input('Do you wish to continue? (y or n)\n\r')
-    if res in ['y','Y','Yes','yes']:
-        pass
-    else:
-        sys.exit(1)
-
 # # Main loop, create network connection
 with helpers.cl_connect() as channel:
 
