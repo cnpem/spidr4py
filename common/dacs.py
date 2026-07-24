@@ -270,7 +270,7 @@ class DACs:
       #Set DAC default value
         if load_dacs == True:
           if dac in dacs.keys():
-            if debug: print(f'Set DAC {dac} to value {data[self.dac_mode]:.3G} {data['unit']} ')
+            if debug: print(f'Set DAC {dac} to value {dacs[dac]:.3E} {data['unit']} ')
             self.dacs[dac]['setpoint'] = dacs[dac]
             self.setDAC(dac,value=dacs[dac],debug=self.debug)
           else:
