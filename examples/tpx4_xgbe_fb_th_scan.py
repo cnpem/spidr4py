@@ -373,11 +373,18 @@ with helpers.cl_connect() as channel:
     #Close the HDF5 file
     out_hdf5.close()
 
+    #Get the polarity to reverse matplotlib x_axis (configured in the chip readout config)
+    readout_config = tpx4.ReadoutGetConfig(rpc.ChipIndex(idx=helpers.cl_chip_idx()))
+
     #Plot the figure
     plt.figure()
     plt.plot(output_data['Threshold DAC code'],output_data['Counts Sum'],'-o')
     plt.title(f'Threshold Scan - {ns.exposure_time_us} us exposure')
     plt.xlabel('Threshold (dac codes)')
+
+    #Reverse x axis for hole polarity
+    if readout_config.polarity: plt.gca().invert_xaxis()
+
     plt.ylabel('Counts Sum')
     plt.grid()
     plt.tight_layout()
