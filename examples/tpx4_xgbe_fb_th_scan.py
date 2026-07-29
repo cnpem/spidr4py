@@ -99,22 +99,11 @@ ns = helpers.cl_parse(with_chip_idx=True, args={
     '--testname':dict(type=str,default='th-scan',help='test name to be create results dir'),
     '--debug':dict(type=int,choices=range(4),default=1,help='Print debug level. 0: no print, 1: standard, 2: verbose, 3: all messages'),
     "--exposure-time-us": dict(type=int,default=10,help='Exposure time (shutter time) in microseconds'),
-    '--th_low_e':dict(type=int,default=0,help='Threshold low in e-'),
-    '--th_high_e':dict(type=int,required=True,help='Threshold high in e-'),
-    '--n_points':dict(required=False,type=int_greater_1,default=2,help='Number of threshold samples'),
+    "--scan":dict(type=int, required = True, nargs=3, help='Enter the threshold scan start, stop and step'),
+    "--type":dict(choices=['electrons','dac_code'],default='electrons',help='Define the type of the threshold scan'),
     '--repeat':dict(required=False,type=int,default=1,help='Number of repetitions per threshold sample'),
     '--save-crw-frames':dict(action=BooleanOptionalAction,default=False,help='Save CRW frames in the HDF5 file'),
 })
-
-TH_STEP_MAX = 20
-th_step = (ns.th_high_e - ns.th_low_e)/(ns.n_points-1)
-if th_step < TH_STEP_MAX:
-    print(f'WARNING: Threshold step is {th_step:.2f} electrons. Please consider to proceed with a step larger than {TH_STEP_MAX} electrons.')
-    res = input('Do you wish to continue? (y or n)\n\r')
-    if res in ['y','Y','Yes','yes']:
-        pass
-    else:
-        sys.exit(1)
 
 # # Main loop, create network connection
 with helpers.cl_connect() as channel:
@@ -231,6 +220,10 @@ with helpers.cl_connect() as channel:
 
     #Save output parameters
     output['exposure time (us)'] = ns.exposure_time_us
+    output['start'] = ns.scan[0]
+    output['stop'] = ns.scan[1]
+    output['step'] = ns.scan[2]
+    output['scan type'] = ns.type
 
     # Create the hdf5 output file
     out_hdf5 = hdf5.hdf5_nexus(os.path.join(output['fullpath'],'th-scan.hdf5'),serial_number = ctrl.GetChipBoardInfo(rpc.EMPTY).serial)
@@ -244,27 +237,34 @@ with helpers.cl_connect() as channel:
     #Append dacs to output_dacs
     for dac in dacs.dacs.keys():
         output_dacs[f'{dac} readback (V)'] = dacs.dacs[dac]['readback']
-
+        output_dacs[f'{dac} dac code'] = dacs.dacs[dac]['dac_code']
     out_hdf5.write_metadata(output_dacs)
 
     #Create output data dictionary
     output_data = {}
 
     #Build the threshold array to iterate
-    output_data['Threshold Target (e)'] = np.linspace(ns.th_low_e,ns.th_high_e,ns.n_points)
+    if ns.type == 'electrons':
+        output_data['Threshold Target (e)'] = np.arange(output['start'], output['stop'] + output['step'], output['step'])
+        iterator = output_data['Threshold Target (e)']
+    else:
+        output_data['Threshold DAC code Target'] = np.arange(output['start'], output['stop'] + output['step'], output['step'])
+        iterator = output_data['Threshold DAC code Target']
 
-    output_data['Threshold Readback'] = np.zeros(ns.n_points)
+    data_len = len(iterator)
 
-    output_data['Threshold DAC readback (V)'] = np.zeros(ns.n_points)
-    output_data['FBK DAC readback (V)'] = np.zeros(ns.n_points)
-    output_data['Threshold dac code'] = np.zeros(ns.n_points)
+    output_data['Threshold Readback'] = np.zeros(data_len)
 
-    output_data['Counts Sum'] = np.zeros(ns.n_points)
-    output_data['Maximum Counts'] = np.zeros(ns.n_points)
-    output_data['Mean Counts'] = np.zeros(ns.n_points)
+    output_data['Threshold DAC readback (V)'] = np.zeros(data_len)
+    output_data['FBK DAC readback (V)'] = np.zeros(data_len)
+    output_data['Threshold DAC code'] = np.zeros(data_len)
+
+    output_data['Counts Sum'] = np.zeros(data_len)
+    output_data['Maximum Counts'] = np.zeros(data_len)
+    output_data['Mean Counts'] = np.zeros(data_len)
 
     # It is necessary to create all datasets before open hdf5 file
-    out_hdf5.create_2D_datasets(output_data,'Threshold Readback',x_units = 'e')
+    out_hdf5.create_2D_datasets(output_data,'Threshold DAC code',x_units = 'dac steps')
 
     #Valid images array
     images = []
@@ -272,18 +272,21 @@ with helpers.cl_connect() as channel:
     #Create an image
     img = np.zeros((512,448))
 
-    for index,th in enumerate(output_data['Threshold Target (e)']):
+    for index,setpoint in enumerate(iterator):
         # Configure threshold in e. Polarity = 0 means electrons collection
         print('-----------------------------------------------------------')
-        output_data['Threshold Readback'][index] = dacs.conf_threshold(THR_e=th,debug=True)
+        if ns.type == 'electrons':
+            output_data['Threshold Readback'][index] = dacs.conf_threshold(THR_e=setpoint,debug=True)
+        else:
+            output_data['Threshold Readback'][index] = dacs.conf_threshold_dac_code(dac_code=setpoint,debug=True)
 
         output_data['Threshold DAC readback (V)'][index] = dacs.dacs['VThreshold']['readback']
         output_data['FBK DAC readback (V)'][index] = dacs.dacs['VFBK']['readback']
-        output_data['Threshold dac code'][index] = dacs.dacs['VThreshold']['dac_code']
+        output_data['Threshold DAC code'][index] = dacs.dacs['VThreshold']['dac_code']
 
         for i in range(ns.repeat):
 
-            print(f'Threshold scan step {index+1}/{ns.n_points}: th target {th:.2f} e-. Measured {output_data['Threshold Readback'][index]:.2f}. Repetition {i+1}/{ns.repeat}')
+            print(f'Threshold scan step {index+1}/{data_len}: Setpoint {setpoint} {ns.type}. Threshold measured {output_data['Threshold Readback'][index]:.2f} e. Repetition {i+1}/{ns.repeat}')
 
             #clear start flags
             start_event_top.clear()
@@ -354,13 +357,13 @@ with helpers.cl_connect() as channel:
     counter_max = np.max(images,axis=(1,2))
     counter_mean = np.mean(images,axis=(1,2))
 
-    for i in range(ns.n_points):
+    for i in range(data_len):
         output_data['Counts Sum'][i] = np.sum(counter_sum[i*ns.repeat:(i+1)*ns.repeat])/ns.repeat
         output_data['Maximum Counts'][i] = np.max(counter_max[i*ns.repeat:(i+1)*ns.repeat])
         output_data['Mean Counts'][i] = np.mean(counter_mean[i*ns.repeat:(i+1)*ns.repeat])
 
     #Sort arrays accordingly to the readback threshold
-    sorted_indexes = np.argsort(output_data['Threshold Readback'])
+    sorted_indexes = np.argsort(output_data['Threshold DAC code'])
     for key in output_data.keys():
         output_data[key] = output_data[key][sorted_indexes]
 
@@ -370,11 +373,18 @@ with helpers.cl_connect() as channel:
     #Close the HDF5 file
     out_hdf5.close()
 
+    #Get the polarity to reverse matplotlib x_axis (configured in the chip readout config)
+    readout_config = tpx4.ReadoutGetConfig(rpc.ChipIndex(idx=helpers.cl_chip_idx()))
+
     #Plot the figure
     plt.figure()
-    plt.plot(output_data['Threshold Readback'],output_data['Counts Sum'],'-o')
+    plt.plot(output_data['Threshold DAC code'],output_data['Counts Sum'],'-o')
     plt.title(f'Threshold Scan - {ns.exposure_time_us} us exposure')
-    plt.xlabel('Threshold (e)')
+    plt.xlabel('Threshold (dac codes)')
+
+    #Reverse x axis for hole polarity
+    if readout_config.polarity: plt.gca().invert_xaxis()
+
     plt.ylabel('Counts Sum')
     plt.grid()
     plt.tight_layout()

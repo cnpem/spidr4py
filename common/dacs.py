@@ -228,6 +228,19 @@ class DACs:
     readout_config = self.tpx4.ReadoutGetConfig(rpc.ChipIndex(idx=self.chip_index))
     self.hole_polarity = readout_config.polarity
     self.low_gain = readout_config.gain
+
+    # Store gain value in V/e
+    # ---------------------------------------------------------------------
+    # Nominal calculation of gain does not represent the real gain, Timepix4 CSA parasitic capacitance is around 1.7fF
+    # Cf_low = 6e-15
+    # Cf_high = 3e-15
+    # Cf = Cf_low if LOW_GAIN else Cf_high
+    # capacitance = (n*q)/V --> gain (V/e) = q/capacitance
+    # Gain_Ve = 1.6e-19/Cf
+    # We will use the value from Xavi scripts in V/e
+    # ---------------------------------------------------------------------
+    self.gain_V_e = 20.5e-6 if self.low_gain else 34.5e-6
+
     #print(f'Polarity: {readout_config.polarity}')
     #print(f'Gain: {readout_config.gain}')
 
@@ -249,21 +262,24 @@ class DACs:
           json.dump(dacs, f, indent=4)
           print(f'File created {dacs_filepath}')
 
+    #Get current DACs list to find dac_codes
+    dacs_list = self.tpx4.GetDacs(rpc.EMPTY).items
+
     #Load DACs if needed and readout always
     for dac,data in self.dacs.items():
       #Set DAC default value
         if load_dacs == True:
           if dac in dacs.keys():
-            if debug: print(f'Set DAC {dac} to value {data[self.dac_mode]:.3G} {data['unit']} ')
+            if debug: print(f'Set DAC {dac} to value {dacs[dac]:.3E} {data['unit']} ')
             self.dacs[dac]['setpoint'] = dacs[dac]
             self.setDAC(dac,value=dacs[dac],debug=self.debug)
           else:
             print(f'ERROR: dac {dac} not found in DACs file!')
             sys.exit(1)
         else:
-          #Initialize dac_code and setpoint as 0
-          self.dacs[dac]['dac_code'] = None
+          #Initialize dac_code with the current register value and setpoint as None
           self.dacs[dac]['setpoint'] = None
+          self.dacs[dac]['dac_code'] = [filtered_dac.value for filtered_dac in dacs_list if self.dacs[dac]['DAC'] == filtered_dac.dac][0]
         #Read DAC on debug mode (populate readback value in dictionary)
         self.readDAC(dac,debug=self.debug)
 
@@ -394,19 +410,8 @@ class DACs:
                   THR_e=1000,
                   debug=True):
 
-    # Nominal calculation of gain does not represent the real gain, Timepix4 CSA parasitic capacitance is around 1.7fF
-    #Cf_low = 6e-15
-    #Cf_high = 3e-15
-    #Cf = Cf_low if LOW_GAIN else Cf_high
-    # capacitance = (n*q)/V --> gain (V/e) = q/capacitance
-    #Gain_Ve = 1.6e-19/Cf
-    #We will use the value from Xavi scripts in V/e
-
-    #Store gain value
-    Gain_Ve = 20.5e-6 if self.low_gain else 34.5e-6
-
     #Calculate the voltage delta between FBK and THR DACs
-    THR_FBK_V=THR_e*Gain_Ve
+    THR_FBK_V=THR_e*self.gain_V_e
 
     #readback FBK voltage
     rb_fbk = self.readDAC('VFBK',debug=debug)
@@ -419,11 +424,34 @@ class DACs:
 
     #Compute the readback threshold
     meas_threshold_v = (rb_fbk - rb_th) if self.hole_polarity else (rb_th - rb_fbk)
-    meas_threshold_e = meas_threshold_v/Gain_Ve
+    meas_threshold_e = meas_threshold_v/self.gain_V_e
 
     if debug:
         print(f'Operation threshold target: {THR_e} e. Threshold measured {meas_threshold_e} e')
         print(f'DAC VFBK measured {rb_fbk:.3f}')
         print(f'DAC VThreshold target {THR_V:.3f}. Measured {rb_th:.3f}')
+
+    return meas_threshold_e
+
+  def conf_threshold_dac_code(self,
+                  dac_code,
+                  debug=True):
+
+    #readback FBK voltage
+    rb_fbk = self.readDAC('VFBK',debug=debug)
+
+    #Set the DAC
+    self.setDAC_lowlevel('VThreshold',dac_code=dac_code,debug=debug)
+    rb_th = self.readDAC('VThreshold',debug=debug)
+
+    #Compute the readback threshold
+    meas_threshold_v = (rb_fbk - rb_th) if self.hole_polarity else (rb_th - rb_fbk)
+    meas_threshold_e = meas_threshold_v/self.gain_V_e
+
+    if debug:
+        print(f'Set Threshold dac code: {dac_code}')
+        print(f'Threshold measured {meas_threshold_e} e')
+        print(f'DAC VFBK measured {rb_fbk:.3f} V')
+        print(f'DAC VThreshold measured {rb_th:.3f} V')
 
     return meas_threshold_e

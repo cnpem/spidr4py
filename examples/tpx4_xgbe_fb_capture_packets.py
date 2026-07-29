@@ -94,7 +94,8 @@ ns = helpers.cl_parse(with_chip_idx=True, args={
     '--testname':dict(type=str,default='fb_acquisition',help='test name to create results directory'),
     '--debug':dict(type=int,choices=range(4),default=1,help='Print debug level. 0: no print, 1: standard, 2: verbose, 3: all messages'),
     "--exposure-time-us": dict(type=int,default=10,help='Exposure time (shutter time) in microseconds'),
-    '--th_e':dict(type=int,default=0,help='Threshold in e-'),
+    '--th':dict(type=int,default=None,help='Threshold in e- or dac_codes, see th-type argument'),
+    "--th-type":dict(choices=['electrons','dac_code'],default='electrons',help='Define the type of the threshold set. Electrons or DAC codes'),
     '--scale':dict(type=int,default=0,required=False,help='Adjust maximum scale value in the live viewer plots. 0 means autoscale'),
     '--auto-shutter':dict(action=BooleanOptionalAction,default=False,help='Retrigger shutter when readout finishes'),
     '--live-viewer':dict(action=BooleanOptionalAction,default=False,help='Open a simple live viewer to see current image. This can affects readout performance'),
@@ -124,9 +125,6 @@ with helpers.cl_connect() as channel:
     #Instantiate DAC class without initialzie DAC (do not override configuration)
     # ------------------------------------------------------------------------------------------------------
     dacs = dacs.DACs(tpx4,helpers.cl_chip_idx(),adc_half='TOP',adc='internal',debug=True, load_dacs=False)
-
-    # Configure threshold in e. Polarity = 0 means electrons collection
-    dacs.conf_threshold(THR_e=ns.th_e,debug=True)
 
     #Read if shutter control packets are enabled
     ans = tpx4.ReadReg(
@@ -228,8 +226,14 @@ with helpers.cl_connect() as channel:
         output['Chip Revision'] = chip.revision
         output['Chip ID'] = f'{chip.chip_id:08x}'
 
-    #Build the threshold
-    output['threshold (e)'] = ns.th_e
+    # Confgiure threshold if value different from None
+    if ns.th != None:
+        # Configure threshold depending on th_type
+        if ns.th_type == 'electrons':
+            output['Threshold Readback (e)'] = dacs.conf_threshold(THR_e=ns.th,debug=True)
+        else:
+            output['Threshold Readback (e)'] = dacs.conf_threshold_dac_code(dac_code=ns.th,debug=True)
+
     output['exposure time (us)'] = ns.exposure_time_us
 
     # Create the hdf5 output file
@@ -241,6 +245,7 @@ with helpers.cl_connect() as channel:
     output_dacs = {}
     for dac in dacs.dacs.keys():
         output_dacs[f'{dac} readback (V)'] = dacs.dacs[dac]['readback']
+        output_dacs[f'{dac} dac code'] = dacs.dacs[dac]['dac_code']
     out_hdf5.write_metadata(output_dacs)
 
     #Wait exit, quit, q or e to send the stop event
