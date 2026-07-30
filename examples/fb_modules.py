@@ -34,6 +34,9 @@ class bcolors:
 # DecodePacket class is responsible to decode each 64-bit packet, find probable control packets and structure the data
 class DecodePacket:
     def __init__(self,packet):
+
+        self.packet_processor_clk_Hz = 40e6
+
         self.packet = packet
 
         self.top = (packet >> 63) & 0b1
@@ -80,6 +83,12 @@ class DecodePacket:
                 self.name = 'DATA'
 
         self.control = False if self.name == 'DATA' else True
+
+        # For status packets (0xE0, 0xE1, 0xE2, 0xE3, 0xE4, 0xE5, 0xEA) compute global timer
+        if self.control and (self.header < 0xF0):
+            self.global_timer_s = (packet&0xFFFFFFFFFFFF)/self.packet_processor_clk_Hz
+        else:
+            self.global_timer_s = None
         self.array8bit = struct.unpack('8B',packet.to_bytes(8))
 
 # -----------------------------------------------------------------------------------------------------------
@@ -120,12 +129,15 @@ class Packet2Frame:
         if self.decoded_packet.name == 'SHUTTER_RISE' and self.state != 'SEGMENT':
             self.shutter_rise = True
             self.shutter_fall = False
-            if self.debug >= 1: print(f"{bcolors.CONTROL}{self.packet_counter:06} - {self.decoded_packet.half} 0x{self.decoded_packet.header:02X}: {self.decoded_packet.name}{bcolors.ENDC}")
+            if self.debug >= 1: print(f"{bcolors.CONTROL}{self.packet_counter:06} - {self.decoded_packet.half} 0x{self.decoded_packet.header:02X}: {self.decoded_packet.name} timestamp: {self.decoded_packet.global_timer_s:0.3E} s{bcolors.ENDC}")
+            self.shutter_rise_timestamp = self.decoded_packet.global_timer_s
 
         # Look for a shutter fall package
         elif self.decoded_packet.name == 'SHUTTER_FALL' and self.state != 'SEGMENT':
-            if self.debug >= 1: print(f"{bcolors.CONTROL}{self.packet_counter:06} - {self.decoded_packet.half} 0x{self.decoded_packet.header:02X}: {self.decoded_packet.name}{bcolors.ENDC}")
+            if self.debug >= 1: print(f"{bcolors.CONTROL}{self.packet_counter:06} - {self.decoded_packet.half} 0x{self.decoded_packet.header:02X}: {self.decoded_packet.name} timestamp: {self.decoded_packet.global_timer_s:0.3E} s{bcolors.ENDC}")
             self.shutter_fall = True
+            self.shutter_time = self.decoded_packet.global_timer_s - self.shutter_rise_timestamp
+            if self.debug >= 1: print(f"{bcolors.CONTROL}{self.packet_counter:06} - Shutter exposure time {self.shutter_time:03E} s{bcolors.ENDC}")
 
         # FSM definition
         match self.state:
