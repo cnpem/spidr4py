@@ -31,10 +31,9 @@ dacs_lib = {
   'VBiasPreamp':{
     'bits':8,
     'unit':'A',
-    'xavi_default':438e-9,
     'fast_default':728e-9,
     'lp_default':100e-9,
-    'fb_default':100e-9,
+    'fb_default':500e-9,
     'fullscale':1.45e-6,
     'DAC':rpc.TPX4_DAC_VBIASPREAMP,
     'DAC_OUT_TOP': rpc.TPX4_OUT_VBIASPREAMP_TOP,
@@ -43,7 +42,6 @@ dacs_lib = {
   'VCascPreamp':{
     'bits':8,
     'unit':'V',
-    'xavi_default':750e-3,
     'fast_default':750e-3,
     'lp_default':750e-3,
     'fb_default':750e-3,
@@ -55,10 +53,9 @@ dacs_lib = {
   'VBiasLevelShift':{
     'bits':8,
     'unit':'A',
-    'xavi_default':500e-9,
     'fast_default':500e-9,
     'lp_default':100e-9,
-    'fb_default':100e-9,
+    'fb_default':500e-9,
     'fullscale':1.45e-6,
     'DAC':rpc.TPX4_DAC_VBIASLEVELSHIFT,
     'DAC_OUT_TOP': rpc.TPX4_OUT_VBIASLEVELSHIFTPMOS_TOP,
@@ -67,10 +64,9 @@ dacs_lib = {
   'VBiasIkrum':{
     'bits':8,
     'unit':'A',
-    'xavi_default':1.6e-9,
     'fast_default':1e-9,
     'lp_default':1e-9,
-    'fb_default':1.6e-9,
+    'fb_default':10e-9,
     'fullscale':100e-9,
     'DAC':rpc.TPX4_DAC_VBIASIKRUM,
     'DAC_OUT_TOP':rpc.TPX4_OUT_VBIASIKRUM_TOP,
@@ -79,7 +75,6 @@ dacs_lib = {
   'VFBK':{
     'bits':8,
     'unit':'V',
-    'xavi_default':500e-3,
     'fast_default':500e-3,
     'lp_default':500e-3,
     'fb_default':500e-3,
@@ -91,7 +86,6 @@ dacs_lib = {
   'VTpulseCoarse':{
     'bits':8,
     'unit':'V',
-    'xavi_default':600e-3,
     'fast_default':600e-3,
     'lp_default':600e-3,
     'fb_default':600e-3,
@@ -103,7 +97,6 @@ dacs_lib = {
   'VTpulseFine':{
     'bits':14,
     'unit':'V',
-    'xavi_default':600e-3,
     'fast_default':600e-3,
     'lp_default':600e-3,
     'fb_default':600e-3,
@@ -115,7 +108,6 @@ dacs_lib = {
   'VBiasDiscTailNMOS':{
     'bits':8,
     'unit':'A',
-    'xavi_default':865e-9,
     'fast_default':1.34e-6,
     'lp_default':210e-9,
     'fb_default':210e-9,
@@ -127,10 +119,9 @@ dacs_lib = {
   'VBiasDiscPMOS':{
     'bits':8,
     'unit':'A',
-    'xavi_default':400e-9,
     'fast_default':920e-9,
     'lp_default':300e-9,
-    'fb_default':300e-9,
+    'fb_default':400e-9,
     'fullscale':3.6e-6,
     'DAC':rpc.TPX4_DAC_VBIASDISCPMOS,
     'DAC_OUT_TOP': rpc.TPX4_OUT_VBIASDISCPMOS_TOP,
@@ -139,10 +130,9 @@ dacs_lib = {
   'VBiasDiscTRAFF':{
     'bits':8,
     'unit':'A',
-    'xavi_default':780e-9,
     'fast_default':500e-9,
     'lp_default':250e-9,
-    'fb_default':250e-9,
+    'fb_default':1.5e-6,
     'fullscale':4e-6,
     'DAC':rpc.TPX4_DAC_VBIASDISCTRAFF,
     'DAC_OUT_TOP': rpc.TPX4_OUT_VBIASDISCTRAFF_TOP,
@@ -151,7 +141,6 @@ dacs_lib = {
   'VCascDisc':{
     'bits':8,
     'unit':'V',
-    'xavi_default':550e-3,
     'fast_default':550e-3,
     'lp_default':550e-3,
     'fb_default':550e-3,
@@ -163,7 +152,6 @@ dacs_lib = {
   'VThreshold':{
     'bits':14,
     'unit':'V',
-    'xavi_default':540e-3,
     'fast_default':540e-3,
     'lp_default':540e-3,
     'fb_default':540e-3,
@@ -175,7 +163,6 @@ dacs_lib = {
   'VBiasDAC':{
     'bits':8,
     'unit':'A',
-    'xavi_default':40e-9,  ### Xavi / Reference
     'fast_default':78e-9,
     'lp_default':16e-9,
     'fb_default':16e-9,
