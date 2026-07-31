@@ -48,7 +48,7 @@ def parse_tuples_pairs(s):
         raise ArgumentTypeError(f"Invalid format: {s}. Error: {e}")
 
 ns = helpers.cl_parse(with_chip_idx=True, args={
-    '--config-path':dict(type=str,default='config/{chipboard_serial_number}/{chip_id}/',help='path to config directory'),
+    '--config-path':dict(type=str,default='{HOME}/config/{chipboard_serial_number}/{chip_id}/',help='path to config directory relative to the chipboard directory'),
     '--to-mask':dict(type=parse_tuples_pairs,default=(),nargs='+',help='mask additional pixels. Send pixels as tuples: Y1,X1 Y2,X2'),
 })
 
@@ -66,18 +66,19 @@ with helpers.cl_connect() as channel:
     mask_file = 'eq_mask_fb.dat'
     eq_file = 'eq_codes_fb.dat'
 
-    if ns.config_path == 'config/{chipboard_serial_number}/{chip_id}/':
-        #get the control service
-        ctrl = rpc.ControlInfoStub(channel)
-        #get chipboard carrier information
-        carrier = ctrl.GetChipBoardInfo(rpc.EMPTY)
-        #get chips information
-        chips = ctrl.GetPixelChipInfo(rpc.EMPTY)
-        #consider a single ASIC connected in position 0
-        chip = chips.items[0]
-        config_dir = f'config/{carrier.serial}/{chip.chip_id:08x}/'
+    #get the control service
+    ctrl = rpc.ControlInfoStub(channel)
+    #get chipboard carrier information
+    carrier = ctrl.GetChipBoardInfo(rpc.EMPTY)
+    #get chips information
+    chips = ctrl.GetPixelChipInfo(rpc.EMPTY)
+    #consider a single ASIC connected in position 0
+    chip = chips.items[0]
+
+    if ns.config_path == '{HOME}/config/{chipboard_serial_number}/{chip_id}/':
+        config_dir = os.path.join(os.path.expanduser("~"),'config',f'{carrier.serial}',f'{chip.chip_id:08x}')
     else:
-        config_dir = ns.config_path
+        config_dir = os.path.join(os.path.expanduser("~"),'config',f'{carrier.serial}',f'{chip.chip_id:08x}',ns.config_path)
 
     #Create the dir if it does not exist
     os.makedirs(config_dir, exist_ok=True)
@@ -130,4 +131,4 @@ with helpers.cl_connect() as channel:
                 )
         )
     else:
-        print(f"WARNING: Equalization and/or mask bits files not found. Consider to run tpx4_xgbe_fb_gen_equalization.py to create the equalization and mask bits files")
+        print(f"WARNING: Equalization and/or mask bits files not found in {config_dir}. Consider to run tpx4_xgbe_fb_gen_equalization.py to create the equalization and mask bits files")
