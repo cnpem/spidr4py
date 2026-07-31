@@ -98,7 +98,7 @@ ns = helpers.cl_parse(with_chip_idx=True, args={
     '--th':dict(type=int,default=None,help='Threshold in e- or dac_codes, see th-type argument'),
     "--th-type":dict(choices=['electrons','dac_code'],default='electrons',help='Define the type of the threshold set. Electrons or DAC codes'),
     '--scale':dict(type=int,default=0,required=False,help='Adjust maximum scale value in the live viewer plots. 0 means autoscale'),
-    '--auto-shutter':dict(action=BooleanOptionalAction,default=False,help='Retrigger shutter when readout finishes'),
+    '--auto-shutter':dict(action=BooleanOptionalAction,default=True,help='Retrigger shutter when readout finishes'),
     '--live-viewer':dict(action=BooleanOptionalAction,default=False,help='Open a simple live viewer to see current image. This can affects readout performance'),
     '--save-crw-frames':dict(action=BooleanOptionalAction,default=False,help='Save CRW frames in the HDF5 file'),
 })
