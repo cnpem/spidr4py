@@ -94,6 +94,7 @@ ns = helpers.cl_parse(with_chip_idx=True, args={
     '--testname':dict(type=str,default='fb_acquisition',help='test name to create results directory'),
     '--debug':dict(type=int,choices=range(4),default=1,help='Print debug level. 0: no print, 1: standard, 2: verbose, 3: all messages'),
     "--exposure-time-us": dict(type=int,default=10,help='Exposure time (shutter time) in microseconds'),
+    "--n-frames": dict(type=int,default=0,help='Number of frames to acquire. (0: continuous without limit)'),
     '--th':dict(type=int,default=None,help='Threshold in e- or dac_codes, see th-type argument'),
     "--th-type":dict(choices=['electrons','dac_code'],default='electrons',help='Define the type of the threshold set. Electrons or DAC codes'),
     '--scale':dict(type=int,default=0,required=False,help='Adjust maximum scale value in the live viewer plots. 0 means autoscale'),
@@ -235,6 +236,7 @@ with helpers.cl_connect() as channel:
             output['Threshold Readback (e)'] = dacs.conf_threshold_dac_code(dac_code=ns.th,debug=True)
 
     output['exposure time (us)'] = ns.exposure_time_us
+    output['Number of Frames'] = ns.n_frames
 
     # Create the hdf5 output file
     out_hdf5 = hdf5.hdf5_nexus(os.path.join(output['fullpath'],'fb_acquisition.hdf5'),serial_number = ctrl.GetChipBoardInfo(rpc.EMPTY).serial)
@@ -253,7 +255,8 @@ with helpers.cl_connect() as channel:
     status = trigger.GetStatus(rpc.EMPTY)           # get trigger status
 
     try:
-        while rec not in ['exit','quit','e','q']:
+        # Continue when not exit and shutter counter below number of frames
+        while (rec not in ['exit','quit','e','q']) and (status.shutter_counter < ns.n_frames or ns.n_frames == 0):
 
             #Update live viewer with last image
             if ns.live_viewer and status.shutter_counter > 0:
