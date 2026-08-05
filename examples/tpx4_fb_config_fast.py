@@ -26,6 +26,9 @@ from spidr4 import rpc, utils
 #Import repository modules and functions
 import helpers
 
+#Import custom modules
+from common import log
+
 ns = helpers.cl_parse(with_chip_idx=True, args={
     "iface": dict(help="Network interface for Spidr4 10G link", type=str, nargs='?'),
     "--ffly-mode": dict(help="Use firefly links instead of the 10 GbE port", action=BooleanOptionalAction,default=False),
@@ -135,6 +138,14 @@ with helpers.cl_connect() as channel:
     ctrl = rpc.ControlInfoStub(channel)
     tpx4 = rpc.Timepix4Stub(channel)
     datastream = rpc.DataStreamStub(channel)
+
+    # Append the current python call to the log file
+    # ------------------------------------------------------------------------------------------------------
+    # Create an argument array to save inside log file
+    arguments = ''
+    for arg in sys.argv:
+       arguments += arg + ' '
+    output_log = log.log(ctrl,arguments)
 
     # Reset the pixel chips (will also load the default configuration)
     # ------------------------------------------------------------------------------------------------------

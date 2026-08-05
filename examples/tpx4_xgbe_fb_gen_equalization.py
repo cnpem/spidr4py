@@ -35,6 +35,7 @@ from spidr4 import rpc,utils,tpx4tools,stream
 import helpers
 import fb_modules
 from common import dacs
+from common import log
 
 #Global shared variables and semaphore
 current_frame = 0
@@ -105,6 +106,9 @@ output['arguments'] = ''
 for arg in sys.argv:
     output['arguments'] += arg + ' '
 output['datetime'] = datetime.datetime.now().strftime("%Y-%m-%d_%Hh%Mm%Ss")
+
+# Append the arguments to the log file
+output_log = log.log(ctrl,output['arguments'])
 
 #Get git repo information and append to metadata
 output['git url'] = subprocess.check_output('git config --get remote.origin.url',shell=True)

@@ -30,6 +30,7 @@ from spidr4 import rpc, tpx4tools
 #Import custom repository modules
 import helpers
 from common import dacs
+from common import log
 
 ARRAY_SIZE_X = 448
 ARRAY_SIZE_Y = 512
@@ -82,6 +83,17 @@ with helpers.cl_connect() as channel:
 
     #Create the dir if it does not exist
     os.makedirs(config_dir, exist_ok=True)
+
+    # Append the current python call to the log file
+    # ------------------------------------------------------------------------------------------------------
+    # Create an argument array to save inside log file
+    arguments = ''
+    for arg in sys.argv:
+       arguments += arg + ' '
+    output_log = log.log(ctrl,arguments)
+
+    # Append the DAC settings directory to the file
+    output_log.append_dac_settings(config_dir)
 
     #Configure DACs
     # ------------------------------------------------------------------------------------------------------
