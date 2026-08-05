@@ -458,3 +458,33 @@ class DACs:
         print(f'DAC VThreshold measured {rb_th:.3f} V')
 
     return meas_threshold_e
+
+  def conf_threshold_energy(self,
+                  energy,
+                  debug=True):
+
+    if self.energy_cal == False:
+      print('ERROR: The current DAC setting does not support energy calibration.')
+      raise SystemExit
+
+    #readback FBK voltage
+    rb_fbk = self.readDAC('VFBK',debug=debug)
+
+    # Calculate the DAC code - input energy in eV and angular coefficient in dac_codes/keV
+    dac_code = round(self.energy_eq_lin + (energy/1000)*self.energy_eq_ang)
+
+    #Set the DAC
+    self.setDAC_lowlevel('VThreshold',dac_code=dac_code,debug=debug)
+    rb_th = self.readDAC('VThreshold',debug=debug)
+
+    #Compute the readback threshold
+    meas_threshold_v = (rb_fbk - rb_th) if self.hole_polarity else (rb_th - rb_fbk)
+    meas_threshold_e = meas_threshold_v/self.gain_V_e
+
+    if debug:
+        print(f'Set Threshold dac code: {dac_code}')
+        print(f'Threshold measured {meas_threshold_e} e')
+        print(f'DAC VFBK measured {rb_fbk:.3f} V')
+        print(f'DAC VThreshold measured {rb_th:.3f} V')
+
+    return meas_threshold_e
