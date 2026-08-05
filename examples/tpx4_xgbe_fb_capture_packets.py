@@ -126,7 +126,7 @@ with helpers.cl_connect() as channel:
 
     #Instantiate DAC class without initialzie DAC (do not override configuration)
     # ------------------------------------------------------------------------------------------------------
-    dacs = dacs.DACs(tpx4,helpers.cl_chip_idx(),adc_half='TOP',adc='internal',debug=True, load_dacs=False)
+    dacs = dacs.DACs(channel,helpers.cl_chip_idx(),adc_half='TOP',adc='internal',debug=True, load_dacs=False)
 
     #Read if shutter control packets are enabled
     ans = tpx4.ReadReg(

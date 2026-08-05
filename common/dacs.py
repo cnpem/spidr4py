@@ -174,9 +174,9 @@ dacs_lib = {
 }
 
 class DACs:
-  def __init__(self,tpx4_stub,chip_index, adc_half='TOP',adc='internal', load_dacs=False, debug=True,config_path = ''):
+  def __init__(self,channel,chip_index, adc_half='TOP',adc='internal', load_dacs=False, debug=True,config_path = ''):
 
-    self.tpx4 = tpx4_stub
+    self.tpx4 = rpc.Timepix4Stub(channel)
     self.debug = debug
     self.chip_index = chip_index
     self.dacs = dacs_lib

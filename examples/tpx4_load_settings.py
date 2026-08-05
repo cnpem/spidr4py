@@ -99,7 +99,7 @@ with helpers.cl_connect() as channel:
     # ------------------------------------------------------------------------------------------------------
     print('------------------------------------------------------------------------------------------------------------')
     print(f'Loading DACs to the chip')
-    dacs = dacs.DACs(tpx4,helpers.cl_chip_idx(),debug=True, load_dacs=True, config_path = config_dir)
+    dacs = dacs.DACs(channel,helpers.cl_chip_idx(),debug=True, load_dacs=True, config_path = config_dir)
     print('------------------------------------------------------------------------------------------------------------')
 
     #Load Equalization
