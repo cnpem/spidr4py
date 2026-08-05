@@ -167,11 +167,9 @@ with helpers.cl_connect() as channel:
     start_event_top = threading.Event()
     start_event_bot = threading.Event()
 
-    #Create and start top and bottom threads
+    #Create top and bottom threads
     capture_thread_top = threading.Thread(target=async_capture, args=(xgbe_port,decoder_top,stop_event,start_event_top))
     capture_thread_bot = threading.Thread(target=async_capture, args=(xgbe_port+1,decoder_bot,stop_event,start_event_bot))
-    capture_thread_top.start()
-    capture_thread_bot.start()
 
     #Create an output log file
     output = {}
@@ -276,71 +274,84 @@ with helpers.cl_connect() as channel:
     # It is necessary to create all datasets before open hdf5 file
     out_hdf5.create_2D_datasets(output_data,'Threshold DAC code',x_units = 'dac steps')
 
+    # Start readout threads
+    capture_thread_top.start()
+    capture_thread_bot.start()
+
     #Valid images array
     images = []
 
     #Create an image
     img = np.zeros((512,448))
 
-    for index,setpoint in enumerate(iterator):
-        # Configure threshold in e. Polarity = 0 means electrons collection
-        print('-----------------------------------------------------------')
-        if ns.type == 'electrons':
-            output_data['Threshold Readback'][index] = dacs.conf_threshold(THR_e=setpoint,debug=True)
-        elif ns.type == 'dac_code':
-            output_data['Threshold Readback'][index] = dacs.conf_threshold_dac_code(dac_code=setpoint,debug=True)
-        elif ns.type == 'energy':
-            output_data['Threshold Readback'][index] = dacs.conf_threshold_energy(energy=setpoint,debug=True)
+    try:
+        for index,setpoint in enumerate(iterator):
+            # Configure threshold in e. Polarity = 0 means electrons collection
+            print('-----------------------------------------------------------')
+            if ns.type == 'electrons':
+                output_data['Threshold Readback'][index] = dacs.conf_threshold(THR_e=setpoint,debug=True)
+            elif ns.type == 'dac_code':
+                output_data['Threshold Readback'][index] = dacs.conf_threshold_dac_code(dac_code=setpoint,debug=True)
+            elif ns.type == 'energy':
+                output_data['Threshold Readback'][index] = dacs.conf_threshold_energy(energy=setpoint,debug=True)
 
-        output_data['Threshold DAC readback (V)'][index] = dacs.dacs['VThreshold']['readback']
-        output_data['FBK DAC readback (V)'][index] = dacs.dacs['VFBK']['readback']
-        output_data['Threshold DAC code'][index] = dacs.dacs['VThreshold']['dac_code']
+            output_data['Threshold DAC readback (V)'][index] = dacs.dacs['VThreshold']['readback']
+            output_data['FBK DAC readback (V)'][index] = dacs.dacs['VFBK']['readback']
+            output_data['Threshold DAC code'][index] = dacs.dacs['VThreshold']['dac_code']
 
-        for i in range(ns.repeat):
+            for i in range(ns.repeat):
 
-            print(f'Threshold scan step {index+1}/{data_len}: Setpoint {setpoint} {ns.type}. Threshold measured {output_data['Threshold Readback'][index]:.2f} e. Repetition {i+1}/{ns.repeat}')
+                print(f'Threshold scan step {index+1}/{data_len}: Setpoint {setpoint} {ns.type}. Threshold measured {output_data['Threshold Readback'][index]:.2f} e. Repetition {i+1}/{ns.repeat}')
 
-            #clear start flags
-            start_event_top.clear()
-            start_event_bot.clear()
-
-            #wait start events to send a shutter during a valid frame
-            start_event_top.wait()
-            start_event_bot.wait()
-
-            #send the shutter
-            trigger.StartAutoShutter(rpc.EMPTY)             # Start auto-shutter
-
-            with lock:
-                shutter_open_frame = current_frame+1
-
-            #Wait trigger to finish
-            status = trigger.GetStatus(rpc.EMPTY)           # get trigger status
-            while status.auto_shutter_busy:
-                time.sleep(0.1)
-                status = trigger.GetStatus(rpc.EMPTY)       # Get the current status
-
-            #get shutter close frame index
-            with lock:
-                shutter_close_frame = current_frame+1
-
-            #Wait for the current frame to finish and the next one
-            for i in range(2):
-                #clear start flags to wait this frame end
+                #clear start flags
                 start_event_top.clear()
                 start_event_bot.clear()
 
-                #wait until this frame ends
+                #wait start events to send a shutter during a valid frame
                 start_event_top.wait()
                 start_event_bot.wait()
 
-            #Compute the image array
-            img = np.sum(np.concatenate((decoder_bot.frames[shutter_open_frame:shutter_close_frame+1], np.rot90(decoder_top.frames[shutter_open_frame:shutter_close_frame+1], k = 2, axes=(1,2))), axis = 1),axis=0)
+                #send the shutter
+                trigger.StartAutoShutter(rpc.EMPTY)             # Start auto-shutter
 
-            #Append the image to the images array
-            images.append(img)
-            #And save it to the HDF5 file
-            out_hdf5.append_image(img,field='data')
+                with lock:
+                    shutter_open_frame = current_frame+1
+
+                #Wait trigger to finish
+                status = trigger.GetStatus(rpc.EMPTY)           # get trigger status
+                while status.auto_shutter_busy:
+                    time.sleep(0.1)
+                    status = trigger.GetStatus(rpc.EMPTY)       # Get the current status
+
+                #get shutter close frame index
+                with lock:
+                    shutter_close_frame = current_frame+1
+
+                #Wait for the current frame to finish and the next one
+                for i in range(2):
+                    #clear start flags to wait this frame end
+                    start_event_top.clear()
+                    start_event_bot.clear()
+
+                    #wait until this frame ends
+                    start_event_top.wait()
+                    start_event_bot.wait()
+
+                #Compute the image array
+                img = np.sum(np.concatenate((decoder_bot.frames[shutter_open_frame:shutter_close_frame+1], np.rot90(decoder_top.frames[shutter_open_frame:shutter_close_frame+1], k = 2, axes=(1,2))), axis = 1),axis=0)
+
+                #Append the image to the images array
+                images.append(img)
+                #And save it to the HDF5 file
+                out_hdf5.append_image(img,field='data')
+
+    except (SystemExit,KeyboardInterrupt):
+        print('Stopping script')
+        #Close the HDF5 file
+        out_hdf5.close()
+        #Send signal to stop read threads after the current frame
+        stop_event.set()
+        sys.exit(1)
 
     #clear start flags
     start_event_top.clear()
