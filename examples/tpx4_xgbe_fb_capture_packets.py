@@ -175,11 +175,9 @@ with helpers.cl_connect() as channel:
     start_event_top = threading.Event()
     start_event_bot = threading.Event()
 
-    #Create and start top and bottom threads
+    #Create threads
     capture_thread_top = threading.Thread(target=async_capture, args=(xgbe_port,decoder_top,stop_event,start_event_top))
     capture_thread_bot = threading.Thread(target=async_capture, args=(xgbe_port+1,decoder_bot,stop_event,start_event_bot))
-    capture_thread_top.start()
-    capture_thread_bot.start()
 
     #Create an output log file
     output = {}
@@ -258,6 +256,10 @@ with helpers.cl_connect() as channel:
         output_dacs[f'{dac} readback (V)'] = dacs.dacs[dac]['readback']
         output_dacs[f'{dac} dac code'] = dacs.dacs[dac]['dac_code']
     out_hdf5.write_metadata(output_dacs)
+
+    # Start readout threads
+    capture_thread_top.start()
+    capture_thread_bot.start()
 
     #Wait exit, quit, q or e to send the stop event
     rec = ''
