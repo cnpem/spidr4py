@@ -19,6 +19,7 @@ from spidr4 import rpc
 import sys
 import os
 import json
+from common import log
 
 LOOP_MAX_ITERATIONS = 200
 
@@ -269,6 +270,21 @@ class DACs:
           self.dacs[dac]['dac_code'] = [filtered_dac.value for filtered_dac in dacs_list if self.dacs[dac]['DAC'] == filtered_dac.dac][0]
         #Read DAC on debug mode (populate readback value in dictionary)
         self.readDAC(dac,debug=self.debug)
+
+    # Check last loaded DACs filepath
+    output_log = log.log(rpc.ControlInfoStub(channel))
+    self.last_dacs_filepath = output_log.read_last_settings()
+    if os.path.isfile(os.path.join(self.last_dacs_filepath,dacs_filename)):
+       with open(os.path.join(self.last_dacs_filepath,dacs_filename), 'r') as f:
+          last_dacs = json.load(f)
+          if 'Energy Calibration' in last_dacs.keys():
+            self.energy_cal = True
+            print(f'Energy calibration found: dac_code = {last_dacs['Energy Calibration']['Linear Coefficient']} + [Energy]*{last_dacs['Energy Calibration']['Angular Coefficient']}')
+            self.energy_eq_lin = last_dacs['Energy Calibration']['Linear Coefficient'] # in dac codes
+            self.energy_eq_ang = last_dacs['Energy Calibration']['Angular Coefficient'] # in dac_codes/keV
+          else:
+            self.energy_cal = False
+            print('Energy calibration not found')
 
   def linearize_voltage_dac(self,dac_name,target_value,initial_dac_code):
     #Start to linearize from the initial value
