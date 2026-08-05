@@ -101,7 +101,7 @@ ns = helpers.cl_parse(with_chip_idx=True, args={
     '--debug':dict(type=int,choices=range(4),default=1,help='Print debug level. 0: no print, 1: standard, 2: verbose, 3: all messages'),
     "--exposure-time-us": dict(type=int,default=10,help='Exposure time (shutter time) in microseconds'),
     "--scan":dict(type=int, required = True, nargs=3, help='Enter the threshold scan start, stop and step'),
-    "--type":dict(choices=['electrons','dac_code'],default='electrons',help='Define the type of the threshold scan'),
+    "--type":dict(choices=['electrons','dac_code','energy'],default='electrons',help='Define the type of the threshold scan. Energy as cutoff in eV'),
     '--repeat':dict(required=False,type=int,default=1,help='Number of repetitions per threshold sample'),
     '--save-crw-frames':dict(action=BooleanOptionalAction,default=False,help='Save CRW frames in the HDF5 file'),
 })
@@ -251,9 +251,15 @@ with helpers.cl_connect() as channel:
     if ns.type == 'electrons':
         output_data['Threshold Target (e)'] = np.arange(output['start'], output['stop'] + output['step'], output['step'])
         iterator = output_data['Threshold Target (e)']
-    else:
+    elif ns.type == 'dac_code':
         output_data['Threshold DAC code Target'] = np.arange(output['start'], output['stop'] + output['step'], output['step'])
         iterator = output_data['Threshold DAC code Target']
+    elif ns.type == 'energy':
+        output_data['Energy Threshold (eV)'] = np.arange(output['start'], output['stop'] + output['step'], output['step'])
+        iterator = output_data['Energy Threshold (eV)']
+    else:
+        print(f'ERROR: undefined type {ns.type}')
+        raise SystemExit
 
     data_len = len(iterator)
 
@@ -281,8 +287,10 @@ with helpers.cl_connect() as channel:
         print('-----------------------------------------------------------')
         if ns.type == 'electrons':
             output_data['Threshold Readback'][index] = dacs.conf_threshold(THR_e=setpoint,debug=True)
-        else:
+        elif ns.type == 'dac_code':
             output_data['Threshold Readback'][index] = dacs.conf_threshold_dac_code(dac_code=setpoint,debug=True)
+        elif ns.type == 'energy':
+            output_data['Threshold Readback'][index] = dacs.conf_threshold_energy(energy=setpoint,debug=True)
 
         output_data['Threshold DAC readback (V)'][index] = dacs.dacs['VThreshold']['readback']
         output_data['FBK DAC readback (V)'][index] = dacs.dacs['VFBK']['readback']

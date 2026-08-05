@@ -97,7 +97,7 @@ ns = helpers.cl_parse(with_chip_idx=True, args={
     "--exposure-time-us": dict(type=int,default=10,help='Exposure time (shutter time) in microseconds'),
     "--n-frames": dict(type=int,default=0,help='Number of frames to acquire. (0: continuous without limit)'),
     '--th':dict(type=int,default=None,help='Threshold in e- or dac_codes, see th-type argument'),
-    "--th-type":dict(choices=['electrons','dac_code'],default='electrons',help='Define the type of the threshold set. Electrons or DAC codes'),
+    "--th-type":dict(choices=['electrons','dac_code','energy'],default='electrons',help='Define the type of the threshold set. Energy as cutoff in eV'),
     '--scale':dict(type=int,default=0,required=False,help='Adjust maximum scale value in the live viewer plots. 0 means autoscale'),
     '--auto-shutter':dict(action=BooleanOptionalAction,default=True,help='Retrigger shutter when readout finishes'),
     '--live-viewer':dict(action=BooleanOptionalAction,default=False,help='Open a simple live viewer to see current image. This can affects readout performance'),
@@ -236,8 +236,13 @@ with helpers.cl_connect() as channel:
         # Configure threshold depending on th_type
         if ns.th_type == 'electrons':
             output['Threshold Readback (e)'] = dacs.conf_threshold(THR_e=ns.th,debug=True)
-        else:
+        elif ns.th_type == 'dac_code':
             output['Threshold Readback (e)'] = dacs.conf_threshold_dac_code(dac_code=ns.th,debug=True)
+        elif ns.th_type == 'energy':
+            output['Threshold Readback (e)'] = dacs.conf_threshold_energy(energy=ns.th,debug=True)
+        else:
+            print(f'ERROR: undefined type {ns.th_type}')
+            raise SystemExit
 
     output['exposure time (us)'] = ns.exposure_time_us
     output['Number of Frames'] = ns.n_frames
