@@ -227,6 +227,9 @@ with helpers.cl_connect() as channel:
     output['step'] = ns.scan[2]
     output['scan type'] = ns.type
 
+    # Store loaded settings in metadata
+    output['DACs file'] = dacs.last_dacs_filepath
+
     # Create the hdf5 output file
     out_hdf5 = hdf5.hdf5_nexus(os.path.join(output['fullpath'],'th-scan.hdf5'),serial_number = ctrl.GetChipBoardInfo(rpc.EMPTY).serial)
 

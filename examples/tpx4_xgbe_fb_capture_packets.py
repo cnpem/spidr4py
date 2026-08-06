@@ -245,6 +245,9 @@ with helpers.cl_connect() as channel:
     output['exposure time (us)'] = ns.exposure_time_us
     output['Number of Frames'] = ns.n_frames
 
+    # Store loaded settings in metadata
+    output['DACs file'] = dacs.last_dacs_filepath
+
     # Create the hdf5 output file
     out_hdf5 = hdf5.hdf5_nexus(os.path.join(output['fullpath'],'fb_acquisition.hdf5'),serial_number = ctrl.GetChipBoardInfo(rpc.EMPTY).serial)
 
