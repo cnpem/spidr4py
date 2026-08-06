@@ -35,6 +35,7 @@ from spidr4 import rpc,utils,tpx4tools,stream
 import helpers
 import fb_modules
 from common import dacs
+from common import log
 
 #Global shared variables and semaphore
 current_frame = 0
@@ -106,6 +107,9 @@ for arg in sys.argv:
     output['arguments'] += arg + ' '
 output['datetime'] = datetime.datetime.now().strftime("%Y-%m-%d_%Hh%Mm%Ss")
 
+# Append the arguments to the log file
+output_log = log.log(ctrl,output['arguments'])
+
 #Get git repo information and append to metadata
 output['git url'] = subprocess.check_output('git config --get remote.origin.url',shell=True)
 output['git commit id'] = subprocess.check_output('git rev-parse HEAD',shell=True)
@@ -141,7 +145,7 @@ with helpers.cl_connect() as channel:
 
     #Instantiate DAC class without initialize DACs (do not override configuration from tpx4_fb_config_fast.py script)
     # ------------------------------------------------------------------------------------------------------
-    dacs = dacs.DACs(tpx4,helpers.cl_chip_idx(),adc_half='TOP',adc='internal',debug=True, load_dacs=False)
+    dacs = dacs.DACs(channel,helpers.cl_chip_idx(),adc_half='TOP',adc='internal',debug=True, load_dacs=False)
 
     print(f'Configure threshold to 0 e-.')
     dacs.conf_threshold(THR_e=0,debug=True)

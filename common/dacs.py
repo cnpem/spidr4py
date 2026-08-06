@@ -19,6 +19,7 @@ from spidr4 import rpc
 import sys
 import os
 import json
+from common import log
 
 LOOP_MAX_ITERATIONS = 200
 
@@ -174,9 +175,9 @@ dacs_lib = {
 }
 
 class DACs:
-  def __init__(self,tpx4_stub,chip_index, adc_half='TOP',adc='internal', load_dacs=False, debug=True,config_path = ''):
+  def __init__(self,channel,chip_index, adc_half='TOP',adc='internal', load_dacs=False, debug=True,config_path = ''):
 
-    self.tpx4 = tpx4_stub
+    self.tpx4 = rpc.Timepix4Stub(channel)
     self.debug = debug
     self.chip_index = chip_index
     self.dacs = dacs_lib
@@ -269,6 +270,21 @@ class DACs:
           self.dacs[dac]['dac_code'] = [filtered_dac.value for filtered_dac in dacs_list if self.dacs[dac]['DAC'] == filtered_dac.dac][0]
         #Read DAC on debug mode (populate readback value in dictionary)
         self.readDAC(dac,debug=self.debug)
+
+    # Check last loaded DACs filepath
+    output_log = log.log(rpc.ControlInfoStub(channel))
+    self.last_dacs_filepath = output_log.read_last_settings()
+    if os.path.isfile(os.path.join(self.last_dacs_filepath,dacs_filename)):
+       with open(os.path.join(self.last_dacs_filepath,dacs_filename), 'r') as f:
+          last_dacs = json.load(f)
+          if 'Energy Calibration' in last_dacs.keys():
+            self.energy_cal = True
+            print(f'Energy calibration found: dac_code = {last_dacs['Energy Calibration']['Linear Coefficient']} + [Energy]*{last_dacs['Energy Calibration']['Angular Coefficient']}')
+            self.energy_eq_lin = last_dacs['Energy Calibration']['Linear Coefficient'] # in dac codes
+            self.energy_eq_ang = last_dacs['Energy Calibration']['Angular Coefficient'] # in dac_codes/keV
+          else:
+            self.energy_cal = False
+            print('Energy calibration not found')
 
   def linearize_voltage_dac(self,dac_name,target_value,initial_dac_code):
     #Start to linearize from the initial value
@@ -426,6 +442,36 @@ class DACs:
 
     #readback FBK voltage
     rb_fbk = self.readDAC('VFBK',debug=debug)
+
+    #Set the DAC
+    self.setDAC_lowlevel('VThreshold',dac_code=dac_code,debug=debug)
+    rb_th = self.readDAC('VThreshold',debug=debug)
+
+    #Compute the readback threshold
+    meas_threshold_v = (rb_fbk - rb_th) if self.hole_polarity else (rb_th - rb_fbk)
+    meas_threshold_e = meas_threshold_v/self.gain_V_e
+
+    if debug:
+        print(f'Set Threshold dac code: {dac_code}')
+        print(f'Threshold measured {meas_threshold_e} e')
+        print(f'DAC VFBK measured {rb_fbk:.3f} V')
+        print(f'DAC VThreshold measured {rb_th:.3f} V')
+
+    return meas_threshold_e
+
+  def conf_threshold_energy(self,
+                  energy,
+                  debug=True):
+
+    if self.energy_cal == False:
+      print('ERROR: The current DAC setting does not support energy calibration.')
+      raise SystemExit
+
+    #readback FBK voltage
+    rb_fbk = self.readDAC('VFBK',debug=debug)
+
+    # Calculate the DAC code - input energy in eV and angular coefficient in dac_codes/keV
+    dac_code = round(self.energy_eq_lin + (energy/1000)*self.energy_eq_ang)
 
     #Set the DAC
     self.setDAC_lowlevel('VThreshold',dac_code=dac_code,debug=debug)

@@ -39,6 +39,7 @@ import helpers
 import fb_modules
 from common import dacs
 from common import hdf5
+from common import log
 
 #Global shared variables and semaphore
 current_frame = 0
@@ -96,7 +97,7 @@ ns = helpers.cl_parse(with_chip_idx=True, args={
     "--exposure-time-us": dict(type=int,default=10,help='Exposure time (shutter time) in microseconds'),
     "--n-frames": dict(type=int,default=0,help='Number of frames to acquire. (0: continuous without limit)'),
     '--th':dict(type=int,default=None,help='Threshold in e- or dac_codes, see th-type argument'),
-    "--th-type":dict(choices=['electrons','dac_code'],default='electrons',help='Define the type of the threshold set. Electrons or DAC codes'),
+    "--th-type":dict(choices=['electrons','dac_code','energy'],default='electrons',help='Define the type of the threshold set. Energy as cutoff in eV'),
     '--scale':dict(type=int,default=0,required=False,help='Adjust maximum scale value in the live viewer plots. 0 means autoscale'),
     '--auto-shutter':dict(action=BooleanOptionalAction,default=True,help='Retrigger shutter when readout finishes'),
     '--live-viewer':dict(action=BooleanOptionalAction,default=False,help='Open a simple live viewer to see current image. This can affects readout performance'),
@@ -125,7 +126,7 @@ with helpers.cl_connect() as channel:
 
     #Instantiate DAC class without initialzie DAC (do not override configuration)
     # ------------------------------------------------------------------------------------------------------
-    dacs = dacs.DACs(tpx4,helpers.cl_chip_idx(),adc_half='TOP',adc='internal',debug=True, load_dacs=False)
+    dacs = dacs.DACs(channel,helpers.cl_chip_idx(),adc_half='TOP',adc='internal',debug=True, load_dacs=False)
 
     #Read if shutter control packets are enabled
     ans = tpx4.ReadReg(
@@ -174,11 +175,9 @@ with helpers.cl_connect() as channel:
     start_event_top = threading.Event()
     start_event_bot = threading.Event()
 
-    #Create and start top and bottom threads
+    #Create threads
     capture_thread_top = threading.Thread(target=async_capture, args=(xgbe_port,decoder_top,stop_event,start_event_top))
     capture_thread_bot = threading.Thread(target=async_capture, args=(xgbe_port+1,decoder_bot,stop_event,start_event_bot))
-    capture_thread_top.start()
-    capture_thread_bot.start()
 
     #Create an output log file
     output = {}
@@ -188,6 +187,9 @@ with helpers.cl_connect() as channel:
     for arg in sys.argv:
         output['arguments'] += arg + ' '
     output['datetime'] = datetime.datetime.now().strftime("%Y-%m-%d_%Hh%Mm%Ss")
+
+    # Append the arguments to the log file
+    output_log = log.log(ctrl,output['arguments'])
 
     #Get git repo information and append to metadata
     output['git url'] = subprocess.check_output('git config --get remote.origin.url',shell=True)
@@ -232,11 +234,19 @@ with helpers.cl_connect() as channel:
         # Configure threshold depending on th_type
         if ns.th_type == 'electrons':
             output['Threshold Readback (e)'] = dacs.conf_threshold(THR_e=ns.th,debug=True)
-        else:
+        elif ns.th_type == 'dac_code':
             output['Threshold Readback (e)'] = dacs.conf_threshold_dac_code(dac_code=ns.th,debug=True)
+        elif ns.th_type == 'energy':
+            output['Threshold Readback (e)'] = dacs.conf_threshold_energy(energy=ns.th,debug=True)
+        else:
+            print(f'ERROR: undefined type {ns.th_type}')
+            raise SystemExit
 
     output['exposure time (us)'] = ns.exposure_time_us
     output['Number of Frames'] = ns.n_frames
+
+    # Store loaded settings in metadata
+    output['DACs file'] = dacs.last_dacs_filepath
 
     # Create the hdf5 output file
     out_hdf5 = hdf5.hdf5_nexus(os.path.join(output['fullpath'],'fb_acquisition.hdf5'),serial_number = ctrl.GetChipBoardInfo(rpc.EMPTY).serial)
@@ -249,6 +259,10 @@ with helpers.cl_connect() as channel:
         output_dacs[f'{dac} readback (V)'] = dacs.dacs[dac]['readback']
         output_dacs[f'{dac} dac code'] = dacs.dacs[dac]['dac_code']
     out_hdf5.write_metadata(output_dacs)
+
+    # Start readout threads
+    capture_thread_top.start()
+    capture_thread_bot.start()
 
     #Wait exit, quit, q or e to send the stop event
     rec = ''
