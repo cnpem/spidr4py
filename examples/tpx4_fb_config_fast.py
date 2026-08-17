@@ -36,7 +36,7 @@ ns = helpers.cl_parse(with_chip_idx=True, args={
     '--channels-bot': dict(type=lambda x: int(x,0),default=0xFF,choices=range(0,256),metavar='[0x00-0xFF]',help='Choose BOTTOM channels to be enabled as hex 8bit'),
     '--link-speed-mbps': dict(type=int,choices=[40,80,160,320,640,1280,2560,5120,10240],default=2560,help='Link Speed in MHz'),
     "--xgbe-port": dict(help="10 GbE port", type=int, default=8192),
-    "--crw-time-us": dict(type=int,default=500000,help='Continuous read-write time in microseconds'),
+    "--crw-time-us": dict(type=int,default=300000,help='Continuous read-write time in microseconds'),
     '--counter': dict(choices=['8bit','16bit'],default='16bit',help='Frame based counter depth'),
     '--reset': dict(action=BooleanOptionalAction,default=True,help='reset Timepix4 ASIC at the beginning'),
     '--status-packets':dict(action=BooleanOptionalAction,default=False,help='Enables sending output status packets in the data stream (for example, Shutter Rise/Fall)'),
