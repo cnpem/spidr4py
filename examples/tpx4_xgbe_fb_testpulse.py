@@ -177,8 +177,8 @@ with helpers.cl_connect() as channel:
     # Frame decoder strucutre and readout threads
     # ------------------------------------------------------------------------------------------------------
     # create class constructors to decode TOP and BOTTOM 64b packets
-    decoder_top = fb_modules.Packet2Frame(debug=ns.debug,use_shutter_control_packets=shutter_control_packets)
-    decoder_bot = fb_modules.Packet2Frame(debug=ns.debug,use_shutter_control_packets=shutter_control_packets)
+    decoder_top = fb_modules.Packet2Frame(debug=ns.debug,use_shutter_control_packets=False)
+    decoder_bot = fb_modules.Packet2Frame(debug=ns.debug,use_shutter_control_packets=False)
 
     #Stop event is the signal to be sent to stop gracefully the threads
     stop_event = threading.Event()
