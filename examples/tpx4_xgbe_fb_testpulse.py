@@ -96,6 +96,20 @@ with helpers.cl_connect() as channel:
     # ------------------------------------------------------------------------------------------------------
     tpx4 = rpc.Timepix4Stub(channel)
 
+    # Get the trigger service
+    trigger = rpc.TriggerStub(channel)
+
+    trigger.Enable(rpc.EMPTY)                       # Enable the trigger logic block
+    trigger.StopAutoShutter(rpc.EMPTY)              # Just in case it was still running
+    # Configure Trigger
+    # ------------------------------------------------------------------------------------------------------
+    trigger.SetConfig(
+        rpc.TriggerConfig(
+            shutter_input=rpc.SHUTTER_IN_SOFTWARE,
+        )
+    )
+    trigger.ResetShutterCounter(rpc.EMPTY)          # Reset shutter counter
+
     #Instantiate DAC class without initialzie DAC (do not override configuration)
     # ------------------------------------------------------------------------------------------------------
     dacs = dacs.DACs(channel,helpers.cl_chip_idx(),adc_half='TOP',adc='internal',debug=True, load_dacs=False)
@@ -205,7 +219,9 @@ with helpers.cl_connect() as channel:
     # Start the test pulse
     # Scan through all columns of the chip
     # ------------------------------------------------------------------------------------------------------
-    helpers.scan_tp(tpx4, helpers.cl_chip_idx(),n_pulses=ns.n_pulses)
+    trigger.ShutterOpen(rpc.EMPTY)
+    helpers.scan_tp(tpx4, helpers.cl_chip_idx(),n_pulses=ns.n_pulses,link_shutter=False)
+    trigger.ShutterClose(rpc.EMPTY)
 
     t_elapsed = (time.time() - t0)
     print(f'Elapsed time for test pulse scanning: {t_elapsed} seconds')
