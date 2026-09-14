@@ -24,7 +24,7 @@ def cl_parse(with_chip_idx: bool = True, args: Dict[str, dict] = dict({})):
         parser.add_argument(arg, **opts)
 
     _cl_ns = parser.parse_args(sys.argv[1:])
-    
+
     return _cl_ns
 
 
@@ -104,8 +104,8 @@ def config_test_pulse(tpx4, chip_idx):
     tpx4.TestPulseEnable(rpc.ChipIndex(idx=chip_idx))
 
 
-def scan_tp(tpx4, chip_idx,n_pulses=1):
-    # tpx4.ShutterOpen(rpc.ChipIndex(idx=chip_idx))
+def scan_tp(tpx4, chip_idx,n_pulses=1,link_shutter=True):
+
     sys.stdout.write("Pulsing columns")
     for i in range(224):
         if i % 8 == 0:
@@ -122,7 +122,7 @@ def scan_tp(tpx4, chip_idx,n_pulses=1):
                 #period_off_us=1,
                 period_off=1,
                 digital=True,
-                link_shutter=True,
+                link_shutter=link_shutter,
                 shutter2tp_latency=2,
                 columns=[
                         rpc.Tpx4ColumnAddress(half=rpc.Tpx4Half.TPX4_TOP, column=i),
@@ -140,8 +140,6 @@ def scan_tp(tpx4, chip_idx,n_pulses=1):
         # Wait for some data...
         time.sleep(0.01+(n_pulses*2+2)*25e-9)
     print("Done!", file=sys.stdout)
-
-    tpx4.ShutterClose(rpc.ChipIndex(idx=chip_idx))
 
 def get_test_image():
     from io import BytesIO
