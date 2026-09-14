@@ -22,7 +22,7 @@ import os
 import h5py
 import sys
 import datetime
-from argparse import ArgumentTypeError #argparse is used inside helpers
+from argparse import ArgumentTypeError,BooleanOptionalAction #argparse is used inside helpers
 
 sys.path.insert(0, os.path.join(os.getcwd(),'..'))
 
@@ -74,7 +74,8 @@ ns = helpers.cl_parse(with_chip_idx=True, args={
     '--filename':dict(type=str,default='testpulse',help='test name to be appended to output filename'),
     '--debug':dict(type=int,choices=range(4),default=1,help='Print debug level. 0: no print, 1: standard, 2: verbose, 3: all messages'),
     '--th_e':dict(type=int,default=3000,help='Threshold low in e-'),
-    '--n_pulses':dict(required=True,type=int,default=1,help='Number of pulses of testpulse'),
+    '--n_pulses':dict(required=False,type=int,default=1,help='Number of pulses of testpulse'),
+    '--standard-image':dict(action=BooleanOptionalAction,default=True,help='Use standard test pulse image. Otherwise it will use a list defined inside the script'),
 })
 
 # # Main loop, create network connection
@@ -121,13 +122,28 @@ with helpers.cl_connect() as channel:
         np.frombuffer(pixelConfigBlob, dtype=np.uint8)
     )
 
-    #update test pulse for selected pixels
+    # Get the default image from helpers
     img = helpers.get_test_image()
+
+    # Define a list in (Y,X) format
+    pixels_tp = [
+        (500,1),
+        (500,2),
+        (500,3)]
+
     for X in range(0,448,1):
         for Y in range(0,512,1):
-            if img[Y,X]:
-                pixelConfig[Y][X] |= (0x1<<6)
-                #print(f'Pixel X:{X:03d} Y:{Y:03d} Equal: 0x{equal[X][Y]:02X} or {equal[X][Y]:02d} Mask: {mask[X][Y]}. Pixel cfg: 0x{pixel_cfg_mtx[Y][X]:02X} or {pixel_cfg_mtx[Y][X]:02d}')
+            # Disable pixel power for all pixels
+            pixelConfig[Y][X] &= (0b11011111)
+            if ns.standard_image:
+                if img[Y,X]:
+                    # Enable pixel test pulse
+                    pixelConfig[Y][X] |= (0x1<<6)
+            else:
+                if (Y,X) in pixels_tp:
+                    # Enable pixel test pulse
+                    pixelConfig[Y][X] |= (0x1<<6)
+                    print(f'Pixel X:{X:03d} Y:{Y:03d} selected for test pulse')
 
     #Serialize pixel config data
     config_blob = tpx4tools.logic2chip_cfg_matrix(pixelConfig)
@@ -234,8 +250,10 @@ with helpers.cl_connect() as channel:
     #reset test pulse for all pixels
     for X in range(0,448,1):
         for Y in range(0,512,1):
-            if img[Y,X]:
-                pixelConfig[Y][X] &= (0b10111111)
+            # Disable test pulse
+            pixelConfig[Y][X] &= (0b10111111)
+            # Enable power if not masked
+            pixelConfig[Y][X] |= (((not(pixelConfig[Y][X]) >> 7)&0b1)<<5)
 
     #Serialize pixel config data
     config_blob = tpx4tools.logic2chip_cfg_matrix(pixelConfig)
