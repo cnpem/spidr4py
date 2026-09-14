@@ -3,11 +3,11 @@
 #############################################################################################################
 #
 #  fb_modules.py
-#  
+#
 #  Performs frame-based decode and provides modules for other scripts integration
 #       The main task is provided to decode Spidr4 SDAQ files
 #
-#  Authors: 
+#  Authors:
 #   Allan Borgato <allan.borgato@lnls.br>
 #   Mauricio Donatti <mauricio.donatti@lnls.br>
 #
@@ -34,13 +34,16 @@ class bcolors:
 # DecodePacket class is responsible to decode each 64-bit packet, find probable control packets and structure the data
 class DecodePacket:
     def __init__(self,packet):
+
+        self.packet_processor_clk_Hz = 40e6
+
         self.packet = packet
-        
+
         self.top = (packet >> 63) & 0b1
         self.header = (packet >> 55) & 0xFF
         self.segment = (packet >> 52) & 0b111
         self.readout_mode = (packet >> 50) & 0b11
-        
+
         #decode if the packet is from TOP or BOTTOM
         self.half = 'TOP' if self.top == True else 'BOT'
 
@@ -69,7 +72,7 @@ class DecodePacket:
             case 0xEA:
                 self.name = 'CTRL_DATA_TEST'
             case 0xF0:
-                self.name = 'FRAME_START' 
+                self.name = 'FRAME_START'
             case 0xF1:
                 self.name = 'FRAME_END'
             case 0xF2:
@@ -80,6 +83,12 @@ class DecodePacket:
                 self.name = 'DATA'
 
         self.control = False if self.name == 'DATA' else True
+
+        # For status packets (0xE0, 0xE1, 0xE2, 0xE3, 0xE4, 0xE5, 0xEA) compute global timer
+        if self.control and (self.header < 0xF0):
+            self.global_timer_s = (packet&0xFFFFFFFFFFFF)/self.packet_processor_clk_Hz
+        else:
+            self.global_timer_s = None
         self.array8bit = struct.unpack('8B',packet.to_bytes(8))
 
 # -----------------------------------------------------------------------------------------------------------
@@ -120,12 +129,15 @@ class Packet2Frame:
         if self.decoded_packet.name == 'SHUTTER_RISE' and self.state != 'SEGMENT':
             self.shutter_rise = True
             self.shutter_fall = False
-            if self.debug >= 1: print(f"{bcolors.CONTROL}{self.packet_counter:06} - {self.decoded_packet.half} 0x{self.decoded_packet.header:02X}: {self.decoded_packet.name}{bcolors.ENDC}")
+            if self.debug >= 1: print(f"{bcolors.CONTROL}{self.packet_counter:06} - {self.decoded_packet.half} 0x{self.decoded_packet.header:02X}: {self.decoded_packet.name} timestamp: {self.decoded_packet.global_timer_s:0.3E} s{bcolors.ENDC}")
+            self.shutter_rise_timestamp = self.decoded_packet.global_timer_s
 
         # Look for a shutter fall package
         elif self.decoded_packet.name == 'SHUTTER_FALL' and self.state != 'SEGMENT':
-            if self.debug >= 1: print(f"{bcolors.CONTROL}{self.packet_counter:06} - {self.decoded_packet.half} 0x{self.decoded_packet.header:02X}: {self.decoded_packet.name}{bcolors.ENDC}")
+            if self.debug >= 1: print(f"{bcolors.CONTROL}{self.packet_counter:06} - {self.decoded_packet.half} 0x{self.decoded_packet.header:02X}: {self.decoded_packet.name} timestamp: {self.decoded_packet.global_timer_s:0.3E} s{bcolors.ENDC}")
             self.shutter_fall = True
+            self.shutter_time = self.decoded_packet.global_timer_s - self.shutter_rise_timestamp
+            if self.debug >= 1: print(f"{bcolors.CONTROL}{self.packet_counter:06} - Shutter exposure time {self.shutter_time:03E} s{bcolors.ENDC}")
 
         # FSM definition
         match self.state:
@@ -144,7 +156,7 @@ class Packet2Frame:
                 # See if a control packet arrived during Idle State
                 elif  self.debug >= 2 and self.decoded_packet.control == True:
                     print(f"{bcolors.WARNING}{self.packet_counter:06} - {self.decoded_packet.half} CONTROL PACKET 0x{self.decoded_packet.header:02X}: {self.decoded_packet.name}{bcolors.ENDC}")
-                
+
             case 'FRAME':
                 # Look for Segment Start packet
                 if self.decoded_packet.name == 'SEGMENT_START':
@@ -186,12 +198,12 @@ class Packet2Frame:
 
                     # Change state from 'SEGMENT' to 'FRAME'
                     self.state = 'FRAME'
-                
-                # Data packet - 
+
+                # Data packet -
                 elif self.data_counter < 1792:
 
                     # Calculate x coordinate of data packet
-                    if (self.segment_address < 4): 
+                    if (self.segment_address < 4):
                         # Left side of matrix
                         x = 224 - 8*(self.data_counter % 28) - (8 - 2*int(self.segment_address))
                     else:
@@ -206,7 +218,7 @@ class Packet2Frame:
                         for pixel in range(4):
                             self.matrix[y + pixel][x] = self.decoded_packet.array8bit[2*pixel]
                             self.matrix[y + pixel][x + 1] = self.decoded_packet.array8bit[2*pixel+1]
-                    
+
                     elif self.readout_mode == '16bit':
                         # Copy two bytes from packet for corresponding pixel of matrix
                         for pixel,msb,lsb in zip([0,2,1,3],[0,1,4,5],[2,3,6,7]):
@@ -224,7 +236,7 @@ if __name__=="__main__":
     import h5py
     import argparse
     import pickle
-    
+
     def dir_path(path):
         if os.path.isdir(path):
             return path
@@ -255,12 +267,12 @@ if __name__=="__main__":
         print('------------------------------------------------------------------------------------------------------------------------------------------------------------------------------')
         # Show wich file is being read
         print(f"Decoding File: {file}")
- 
+
         # Open file to store packets array
         packets = np.fromfile(file, dtype=np.uint64)
 
         # Create a new decoder
-        decoder = Packet2Frame(debug=args.debug,use_shutter_control_packets=args.shutter_control_packets) 
+        decoder = Packet2Frame(debug=args.debug,use_shutter_control_packets=args.shutter_control_packets)
 
         # Compute loop time
         loop_time = time.time()
