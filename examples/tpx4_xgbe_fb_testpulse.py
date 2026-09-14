@@ -209,7 +209,7 @@ with helpers.cl_connect() as channel:
 
     # Concatenate botton and top matrixes to construct full images, considering valid frames
     images = []
-    for i in range(min(len(decoder_top.frames),len(decoder_bot.frames))):
+    for i in range(1,min(len(decoder_top.frames),len(decoder_bot.frames))):
         images.append(np.concatenate((decoder_bot.frames[i], np.rot90(decoder_top.frames[i], 2)), axis = 0))
 
     print(f'Saving output image: {os.path.join(ns.path,f'{ns.filename}.hdf5')}')
