@@ -107,9 +107,6 @@ for arg in sys.argv:
     output['arguments'] += arg + ' '
 output['datetime'] = datetime.datetime.now().strftime("%Y-%m-%d_%Hh%Mm%Ss")
 
-# Append the arguments to the log file
-output_log = log.log(ctrl,output['arguments'])
-
 #Get git repo information and append to metadata
 output['git url'] = subprocess.check_output('git config --get remote.origin.url',shell=True)
 output['git commit id'] = subprocess.check_output('git rev-parse HEAD',shell=True)
@@ -142,6 +139,9 @@ with helpers.cl_connect() as channel:
     ctrl = rpc.ControlInfoStub(channel)
     tpx4 = rpc.Timepix4Stub(channel)
     trigger = rpc.TriggerStub(channel)
+
+    # Append the arguments to the log file
+    output_log = log.log(ctrl,output['arguments'])
 
     #Instantiate DAC class without initialize DACs (do not override configuration from tpx4_fb_config_fast.py script)
     # ------------------------------------------------------------------------------------------------------
